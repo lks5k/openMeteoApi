@@ -308,22 +308,105 @@
         //  CAPA DE DATOS
         // ============================================================
 
+        // ── Utilidades de parsing para la geocodificación inteligente ──
+
+        /**
+         * Separa la consulta en término de búsqueda y pista de país.
+         * "Hawaii, USA"  → { termino: "Hawaii", paisHint: "USA" }
+         * "Paris"        → { termino: "Paris",  paisHint: null  }
+         */
+        function parsearConsulta(consulta) {
+            const partes = consulta.split(',').map(p => p.trim());
+            return { termino: partes[0], paisHint: partes[1] ?? null };
+        }
+
+        /** Normaliza un string para comparación: minúsculas, sin tildes ni puntuación. */
+        function normalizar(str) {
+            return str.toLowerCase()
+                      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                      .replace(/[^a-z0-9\s]/g, '')
+                      .trim();
+        }
+
+        /**
+         * Alias de nombres y abreviaturas comunes → código ISO 3166-1 alpha-2.
+         * Permite al usuario escribir "Hawaii, USA", "Paris, FR", "Bogotá, Colombia", etc.
+         */
+        const PAIS_ALIAS = {
+            'us': 'US', 'usa': 'US', 'eeuu': 'US', 'estados unidos': 'US', 'united states': 'US',
+            'gb': 'GB', 'uk': 'GB', 'reino unido': 'GB', 'united kingdom': 'GB', 'england': 'GB',
+            'mx': 'MX', 'mexico': 'MX',
+            'co': 'CO', 'colombia': 'CO',
+            'ar': 'AR', 'argentina': 'AR',
+            'cl': 'CL', 'chile': 'CL',
+            'pe': 'PE', 'peru': 'PE',
+            've': 'VE', 'venezuela': 'VE',
+            'ec': 'EC', 'ecuador': 'EC',
+            'bo': 'BO', 'bolivia': 'BO',
+            'py': 'PY', 'paraguay': 'PY',
+            'uy': 'UY', 'uruguay': 'UY',
+            'gt': 'GT', 'guatemala': 'GT',
+            'es': 'ES', 'espana': 'ES', 'spain': 'ES',
+            'fr': 'FR', 'france': 'FR', 'francia': 'FR',
+            'de': 'DE', 'germany': 'DE', 'alemania': 'DE',
+            'it': 'IT', 'italy': 'IT', 'italia': 'IT',
+            'pt': 'PT', 'portugal': 'PT',
+            'br': 'BR', 'brazil': 'BR', 'brasil': 'BR',
+            'ca': 'CA', 'canada': 'CA',
+            'au': 'AU', 'australia': 'AU',
+            'jp': 'JP', 'japan': 'JP', 'japon': 'JP',
+            'cn': 'CN', 'china': 'CN',
+            'in': 'IN', 'india': 'IN',
+            'ru': 'RU', 'russia': 'RU', 'rusia': 'RU',
+        };
+
+        /**
+         * Resuelve una pista de país a un código ISO de 2 letras, o null si no reconoce.
+         * Acepta tanto el código directamente ("US") como nombres en español o inglés.
+         */
+        function resolverCodigoPais(hint) {
+            if (!hint) return null;
+            const norm = normalizar(hint);
+            // Coincidencia directa con código de 2 letras
+            if (/^[a-z]{2}$/.test(norm)) return norm.toUpperCase();
+            return PAIS_ALIAS[norm] ?? null;
+        }
+
         /**
          * Geocodifica un nombre de ciudad usando la API de Open-Meteo.
-         * Conserva la lógica original del proyecto.
+         * Solicita hasta 5 candidatos, filtra por país si el usuario escribió una coma,
+         * y elige el resultado con mayor población para evitar ambigüedades.
          * @returns {{ ciudad, pais, latitud, longitud }}
          */
-        async function geocodificarCiudad(nombreCiudad) {
-            const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(nombreCiudad)}&count=1&language=es&format=json`;
+        async function geocodificarCiudad(consulta) {
+            const { termino, paisHint } = parsearConsulta(consulta);
+            const codigoPais = resolverCodigoPais(paisHint);
+
+            const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(termino)}&count=5&language=es&format=json`;
             const res = await fetch(url);
             if (!res.ok) throw new Error(`Error de geocodificación: ${res.status}`);
             const datos = await res.json();
-            if (!datos.results?.length) throw new Error(`No se encontró la ciudad "${nombreCiudad}".`);
+            if (!datos.results?.length) throw new Error(`No se encontró la ciudad "${termino}".`);
+
+            let candidatos = datos.results;
+
+            // Si el usuario especificó un país, filtrar primero por ese código ISO.
+            // Si el filtro no produce resultados (código desconocido), se mantienen todos.
+            if (codigoPais) {
+                const filtrados = candidatos.filter(r => r.country_code === codigoPais);
+                if (filtrados.length > 0) candidatos = filtrados;
+            }
+
+            // Desempatar por población: el lugar más habitado suele ser el más buscado.
+            // La API puede omitir el campo; se usa 0 como fallback.
+            candidatos.sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+
+            const mejor = candidatos[0];
             return {
-                ciudad:   datos.results[0].name,
-                pais:     datos.results[0].country ?? '',
-                latitud:  datos.results[0].latitude,
-                longitud: datos.results[0].longitude,
+                ciudad:   mejor.name,
+                pais:     mejor.country ?? '',
+                latitud:  mejor.latitude,
+                longitud: mejor.longitude,
             };
         }
 
@@ -467,6 +550,12 @@
             try {
                 const { ubicacion, datos } = await obtenerClima(nombreCiudad);
                 renderizarDashboard(ubicacion.ciudad, ubicacion.pais, datos);
+                // Refleja la ciudad resuelta en formato "Ciudad, País" para que el usuario
+                // vea exactamente qué lugar encontró la API (ej: "Hawaii, Guatemala" vs "Hawaii, Estados Unidos").
+                const etiqueta = ubicacion.pais
+                    ? `${ubicacion.ciudad}, ${ubicacion.pais}`
+                    : ubicacion.ciudad;
+                document.getElementById('search-input').value = etiqueta;
             } catch (err) {
                 console.error('[buscarCiudad]', err);
                 mostrarError(err.message);
