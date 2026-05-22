@@ -1,4 +1,3 @@
-```javascript
 /**
  * Obtiene el clima actual de una ciudad usando las APIs de Open-Meteo.
  *
@@ -22,7 +21,6 @@ async function obtenerClima(nombreCiudad) {
 
     const geocodingResponse = await fetch(geocodingURL);
 
-    // Verificar si la respuesta HTTP fue exitosa
     if (!geocodingResponse.ok) {
       throw new Error(
         `Error en la consulta de geolocalización: ${geocodingResponse.status}`
@@ -31,19 +29,12 @@ async function obtenerClima(nombreCiudad) {
 
     const geocodingData = await geocodingResponse.json();
 
-    // Verificar si la ciudad fue encontrada
-    if (
-      !geocodingData.results ||
-      geocodingData.results.length === 0
-    ) {
-      throw new Error(
-        `No se encontró la ciudad "${nombreCiudad}".`
-      );
+    if (!geocodingData.results || geocodingData.results.length === 0) {
+      throw new Error(`No se encontró la ciudad "${nombreCiudad}".`);
     }
 
-    // Extraer datos de la primera coincidencia
-    const ciudad = geocodingData.results[0].name;
-    const latitud = geocodingData.results[0].latitude;
+    const ciudad   = geocodingData.results[0].name;
+    const latitud  = geocodingData.results[0].latitude;
     const longitud = geocodingData.results[0].longitude;
 
     // =========================================================
@@ -54,7 +45,6 @@ async function obtenerClima(nombreCiudad) {
 
     const weatherResponse = await fetch(weatherURL);
 
-    // Verificar si la respuesta HTTP fue exitosa
     if (!weatherResponse.ok) {
       throw new Error(
         `Error en la consulta del clima: ${weatherResponse.status}`
@@ -68,16 +58,14 @@ async function obtenerClima(nombreCiudad) {
     // =========================================================
 
     return {
-      ciudad: ciudad,
-      temperatura: `${weatherData.current.temperature_2m} °C`,
+      ciudad:       ciudad,
+      temperatura:  `${weatherData.current.temperature_2m} °C`,
       codigo_clima: `${weatherData.current.weather_code}`,
     };
-  } catch (error) {
-    // Manejo global de errores
-    console.error("Ocurrió un error:", error.message);
 
-    // Re-lanzar el error para que quien use la función
-    // también pueda manejarlo si lo desea
+  } catch (error) {
+    console.error("Ocurrió un error:", error.message);
+    // Re-lanza el error para que el llamador pueda manejarlo también
     throw error;
   }
 }
@@ -90,7 +78,6 @@ obtenerClima("Cali")
   .then((resultado) => {
     console.log("Clima actual:", resultado);
   })
-  .catch((error) => {
+  .catch(() => {
     console.error("No fue posible obtener el clima.");
   });
-```
