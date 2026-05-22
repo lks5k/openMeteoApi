@@ -84,6 +84,20 @@
             99: { texto: 'Tormenta severa con granizo',emoji: '⛈️'  },
         };
 
+        /**
+         * Resuelve un código meteorológico WMO a su descripción textual y emoji correspondiente.
+         * Si el código no existe en el diccionario, devuelve un objeto genérico de fallback.
+         *
+         * @param {number} codigo - Código numérico WMO del estado del tiempo
+         *   (ej. `0` = cielo despejado, `95` = tormenta eléctrica).
+         * @returns {{ texto: string, emoji: string }} Objeto con la descripción en español
+         *   y el emoji representativo del estado meteorológico.
+         *
+         * @example
+         * resolverCodigo(0);   // { texto: 'Cielo despejado', emoji: '☀️' }
+         * resolverCodigo(95);  // { texto: 'Tormenta eléctrica', emoji: '⛈️' }
+         * resolverCodigo(999); // { texto: 'Estado 999', emoji: '🌡️' }
+         */
         function resolverCodigo(codigo) {
             return WMO_CODES[codigo] ?? { texto: `Estado ${codigo}`, emoji: '🌡️' };
         }
@@ -96,11 +110,36 @@
         const MESES       = ['enero','febrero','marzo','abril','mayo','junio',
                              'julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
+        /**
+         * Formatea una fecha en formato ISO (YYYY-MM-DD) a una cadena legible en español.
+         * Fija la hora a mediodía UTC (`T12:00:00Z`) para evitar desfases de zona horaria
+         * que podrían desplazar el día mostrado.
+         *
+         * @param {string} fechaISO - Fecha en formato ISO 8601, ej. `'2026-05-22'`.
+         * @returns {string} Fecha formateada con día de semana completo, día numérico,
+         *   mes en texto y año, ej. `'Viernes, 22 de mayo de 2026'`.
+         *
+         * @example
+         * formatearFechaLarga('2026-05-22'); // 'Viernes, 22 de mayo de 2026'
+         * formatearFechaLarga('2026-01-01'); // 'Jueves, 1 de enero de 2026'
+         */
         function formatearFechaLarga(fechaISO) {
             const d = new Date(fechaISO + 'T12:00:00Z');
             return `${DIAS[d.getUTCDay()]}, ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]} de ${d.getUTCFullYear()}`;
         }
 
+        /**
+         * Extrae el nombre abreviado del día de la semana a partir de una fecha ISO.
+         * Usado en las tarjetas del pronóstico de 5 días.
+         *
+         * @param {string} fechaISO - Fecha en formato ISO 8601, ej. `'2026-05-22'`.
+         * @returns {string} Abreviatura de 3 letras del día en español,
+         *   ej. `'Vie'`, `'Lun'`, `'Dom'`.
+         *
+         * @example
+         * diaCorto('2026-05-22'); // 'Vie'
+         * diaCorto('2026-05-25'); // 'Lun'
+         */
         function diaCorto(fechaISO) {
             const d = new Date(fechaISO + 'T12:00:00Z');
             return DIAS_CORTOS[d.getUTCDay()];
@@ -110,11 +149,36 @@
         //  CAPA DE DATOS
         // ============================================================
 
+        /**
+         * Divide una consulta de búsqueda en su término principal (nombre de ciudad)
+         * y un hint de país opcional, separados por coma.
+         *
+         * @param {string} consulta - Texto de búsqueda, ej. `'Madrid, España'` o `'Londres'`.
+         * @returns {{ termino: string, paisHint: string|null }} Objeto con el término de ciudad
+         *   limpio y el hint de país (`null` si no se proporcionó).
+         *
+         * @example
+         * parsearConsulta('Madrid, España'); // { termino: 'Madrid', paisHint: 'España' }
+         * parsearConsulta('Londres');        // { termino: 'Londres', paisHint: null }
+         */
         function parsearConsulta(consulta) {
             const partes = consulta.split(',').map(p => p.trim());
             return { termino: partes[0], paisHint: partes[1] ?? null };
         }
 
+        /**
+         * Normaliza una cadena de texto para comparaciones uniformes:
+         * convierte a minúsculas, elimina tildes y diacríticos mediante
+         * descomposición Unicode (NFD), y descarta caracteres no alfanuméricos.
+         *
+         * @param {string} str - Cadena de texto a normalizar.
+         * @returns {string} Cadena en minúsculas sin acentos ni caracteres especiales.
+         *
+         * @example
+         * normalizar('España');    // 'espana'
+         * normalizar('São Paulo'); // 'sao paulo'
+         * normalizar('Côte d\'Ivoire'); // 'cote divoire'
+         */
         function normalizar(str) {
             return str.toLowerCase()
                       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -150,6 +214,21 @@
             'ru': 'RU', 'russia': 'RU', 'rusia': 'RU',
         };
 
+        /**
+         * Convierte un hint de país (nombre completo, alias coloquial o código ISO 2)
+         * al código ISO 3166-1 alpha-2 en mayúsculas. Si recibe exactamente dos letras,
+         * las interpreta directamente como código ISO. Si no reconoce el hint, devuelve `null`.
+         *
+         * @param {string|null} hint - Nombre o código del país, ej. `'España'`, `'es'`, `'eeuu'`.
+         * @returns {string|null} Código ISO 3166-1 alpha-2, ej. `'ES'`, `'US'`.
+         *   `null` si el hint es nulo o no está en el diccionario `PAIS_ALIAS`.
+         *
+         * @example
+         * resolverCodigoPais('eeuu');    // 'US'
+         * resolverCodigoPais('España');  // 'ES'
+         * resolverCodigoPais('es');      // 'ES'
+         * resolverCodigoPais(null);      // null
+         */
         function resolverCodigoPais(hint) {
             if (!hint) return null;
             const norm = normalizar(hint);
@@ -158,9 +237,23 @@
         }
 
         /**
-         * Consulta la API de geocodificación y devuelve hasta `count` resultados crudos,
-         * ordenados por población descendente y filtrados por país si hay hint.
-         * Usado tanto por geocodificarCiudad como por el autocompletado.
+         * Consulta la API de geocodificación de Open-Meteo y devuelve hasta `count` candidatos
+         * crudos, ordenados por población descendente. Si se detecta un hint de país en la
+         * consulta, filtra los resultados por ese país antes de ordenar. Usado tanto por
+         * `geocodificarCiudad` como por el autocompletado del input de búsqueda.
+         *
+         * @async
+         * @param {string} consulta - Nombre de ciudad con hint de país opcional,
+         *   ej. `'Valencia, España'` o `'Springfield, US'`.
+         * @param {number} [count=5] - Número máximo de resultados a solicitar a la API.
+         * @returns {Promise<Array<object>>} Arreglo de objetos candidatos crudos de la API
+         *   (puede ser vacío si no hay resultados). Cada objeto incluye `name`, `latitude`,
+         *   `longitude`, `country`, `country_code`, `admin1` y `population`.
+         * @throws {Error} Si la petición HTTP a la API de geocodificación falla (status no 2xx).
+         *
+         * @example
+         * const candidatos = await buscarCandidatos('Bogotá, Colombia', 3);
+         * // [{ name: 'Bogotá', latitude: 4.71, longitude: -74.07, country: 'Colombia', ... }]
          */
         async function buscarCandidatos(consulta, count = 5) {
             const { termino, paisHint } = parsearConsulta(consulta);
@@ -184,8 +277,19 @@
         }
 
         /**
-         * Geocodifica una consulta y devuelve el mejor candidato.
-         * @returns {{ ciudad, pais, latitud, longitud }}
+         * Geocodifica una consulta de ciudad usando la API de Open-Meteo y devuelve
+         * el candidato con mayor población como resultado principal.
+         *
+         * @async
+         * @param {string} consulta - Nombre de ciudad con hint de país opcional,
+         *   ej. `'Lima, Perú'` o `'París'`.
+         * @returns {Promise<{ ciudad: string, pais: string, latitud: number, longitud: number }>}
+         *   Objeto con el nombre normalizado de la ciudad, su país y coordenadas geográficas.
+         * @throws {Error} Si ningún resultado es encontrado para la consulta proporcionada.
+         *
+         * @example
+         * const loc = await geocodificarCiudad('Buenos Aires');
+         * // { ciudad: 'Buenos Aires', pais: 'Argentina', latitud: -34.61, longitud: -58.37 }
          */
         async function geocodificarCiudad(consulta) {
             const candidatos = await buscarCandidatos(consulta, 5);
@@ -203,7 +307,22 @@
         }
 
         /**
-         * Consulta el clima actual + pronóstico de 5 días para unas coordenadas.
+         * Obtiene el clima actual y el pronóstico de 5 días para unas coordenadas geográficas
+         * usando la API de Open-Meteo. Solicita: temperatura, código meteorológico, humedad
+         * relativa, sensación térmica, velocidad del viento e índice UV para el momento actual;
+         * y código, temperatura máxima y mínima diarias para el pronóstico.
+         *
+         * @async
+         * @param {number} latitud - Latitud geográfica del punto de consulta, ej. `4.71`.
+         * @param {number} longitud - Longitud geográfica del punto de consulta, ej. `-74.07`.
+         * @returns {Promise<object>} Respuesta JSON de la API con las propiedades
+         *   `current` (datos actuales) y `daily` (pronóstico diario).
+         * @throws {Error} Si la petición HTTP a la API de predicción meteorológica falla (status no 2xx).
+         *
+         * @example
+         * const datos = await obtenerClimaPorCoordenadas(4.71, -74.07);
+         * // { current: { temperature_2m: 18, weather_code: 3, uv_index: 4, ... },
+         * //   daily:   { time: ['2026-05-22', ...], temperature_2m_max: [20, ...], ... } }
          */
         async function obtenerClimaPorCoordenadas(latitud, longitud) {
             const params = new URLSearchParams({
@@ -219,12 +338,47 @@
             return res.json();
         }
 
+        /**
+         * Función de alto nivel que combina geocodificación y obtención del pronóstico.
+         * Primero resuelve el nombre de ciudad a coordenadas y luego consulta el clima,
+         * devolviendo ambos resultados en un único objeto.
+         *
+         * @async
+         * @param {string} nombreCiudad - Nombre de ciudad con hint de país opcional,
+         *   ej. `'Medellín'` o `'Cartagena, Colombia'`.
+         * @returns {Promise<{ ubicacion: { ciudad: string, pais: string, latitud: number, longitud: number }, datos: object }>}
+         *   Objeto con `ubicacion` (datos geocodificados) y `datos` (respuesta JSON de la API del clima).
+         * @throws {Error} Si la geocodificación falla o la petición del clima retorna un error.
+         *
+         * @example
+         * const { ubicacion, datos } = await obtenerClima('Cartagena, Colombia');
+         * // ubicacion: { ciudad: 'Cartagena', pais: 'Colombia', latitud: 10.39, longitud: -75.48 }
+         * // datos:     { current: { temperature_2m: 32, ... }, daily: { ... } }
+         */
         async function obtenerClima(nombreCiudad) {
             const ubicacion = await geocodificarCiudad(nombreCiudad);
             const datos     = await obtenerClimaPorCoordenadas(ubicacion.latitud, ubicacion.longitud);
             return { ubicacion, datos };
         }
 
+        /**
+         * Realiza geocodificación inversa usando la API de Nominatim (OpenStreetMap)
+         * para obtener el nombre de ciudad a partir de coordenadas GPS.
+         * Recorre los campos de dirección en orden de granularidad descendente:
+         * `city` → `town` → `village` → `municipality`. Si ninguno está disponible,
+         * devuelve `'Tu ubicación'` como fallback seguro.
+         *
+         * @async
+         * @param {number} lat - Latitud geográfica obtenida del GPS del dispositivo.
+         * @param {number} lon - Longitud geográfica obtenida del GPS del dispositivo.
+         * @returns {Promise<string>} Nombre de la localidad más cercana a las coordenadas,
+         *   o `'Tu ubicación'` si Nominatim no devuelve ningún campo de ciudad.
+         * @throws {Error} Si la petición HTTP a Nominatim falla (status no 2xx).
+         *
+         * @example
+         * const ciudad = await ciudadDesdeCoordenadas(4.71, -74.07);
+         * // 'Bogotá'
+         */
         async function ciudadDesdeCoordenadas(lat, lon) {
             const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=es`;
             const res = await fetch(url, { headers: { 'Accept-Language': 'es' } });
@@ -242,14 +396,63 @@
         // ============================================================
         const dashboardBody = document.getElementById('dashboard-body');
 
+        /**
+         * Reemplaza el contenido del panel `#dashboard-body` con un overlay de carga
+         * y un mensaje informativo para el usuario mientras se realiza una petición asíncrona.
+         *
+         * @param {string} [msg='Cargando datos del clima…'] - Texto a mostrar durante la carga.
+         * @returns {void}
+         *
+         * @example
+         * mostrarCargando();                     // Mensaje por defecto
+         * mostrarCargando('Buscando "París"…');  // Mensaje personalizado
+         */
         function mostrarCargando(msg = 'Cargando datos del clima…') {
             dashboardBody.innerHTML = `<div class="loading-overlay">${msg}</div>`;
         }
 
+        /**
+         * Reemplaza el contenido del panel `#dashboard-body` con un mensaje de error
+         * visible y estilizado para el usuario.
+         *
+         * @param {string} msg - Descripción del error a mostrar, ej. `'No se encontró la ciudad "Xyz".'`.
+         * @returns {void}
+         *
+         * @example
+         * mostrarError('No se encontró la ciudad "Xyz".');
+         * mostrarError('Permiso de ubicación denegado.');
+         */
         function mostrarError(msg) {
             dashboardBody.innerHTML = `<p class="error-msg">⚠️ ${msg}</p>`;
         }
 
+        /**
+         * Genera e inyecta el HTML completo del dashboard meteorológico en `#dashboard-body`.
+         * Renderiza dos secciones: (1) clima actual con temperatura, condición, humedad,
+         * sensación térmica, viento e índice UV; (2) pronóstico de 5 días con tarjetas
+         * individuales por día.
+         *
+         * @param {string} ciudad - Nombre de la ciudad a mostrar en el encabezado.
+         * @param {string} pais - Nombre del país (cadena vacía si no aplica).
+         * @param {object} datosAPI - Respuesta JSON completa de la API de Open-Meteo.
+         * @param {object} datosAPI.current - Datos meteorológicos del momento actual.
+         * @param {number} datosAPI.current.temperature_2m - Temperatura actual en °C.
+         * @param {number} datosAPI.current.weather_code - Código WMO del estado del tiempo.
+         * @param {number} datosAPI.current.relative_humidity_2m - Humedad relativa en %.
+         * @param {number} datosAPI.current.apparent_temperature - Sensación térmica en °C.
+         * @param {number} datosAPI.current.wind_speed_10m - Velocidad del viento en km/h.
+         * @param {number} datosAPI.current.uv_index - Índice UV actual.
+         * @param {object} datosAPI.daily - Datos del pronóstico diario de 5 días.
+         * @param {string[]} datosAPI.daily.time - Arreglo de fechas ISO del pronóstico.
+         * @param {number[]} datosAPI.daily.weather_code - Códigos WMO por día.
+         * @param {number[]} datosAPI.daily.temperature_2m_max - Temperaturas máximas diarias en °C.
+         * @param {number[]} datosAPI.daily.temperature_2m_min - Temperaturas mínimas diarias en °C.
+         * @returns {void}
+         *
+         * @example
+         * renderizarDashboard('Cali', 'Colombia', datosAPI);
+         * renderizarDashboard('Tu ubicación', '', datosAPI); // Desde GPS sin país
+         */
         function renderizarDashboard(ciudad, pais, datosAPI) {
             const c = datosAPI.current;
             const condicion = resolverCodigo(c.weather_code);
@@ -314,6 +517,21 @@
         //  FLUJOS DE BÚSQUEDA
         // ============================================================
 
+        /**
+         * Flujo principal de búsqueda por nombre de ciudad: cierra el dropdown, muestra
+         * el estado de carga, obtiene geocodificación y pronóstico, y renderiza el dashboard.
+         * Actualiza el valor del input con la etiqueta normalizada `"Ciudad, País"`.
+         * Captura cualquier error y lo muestra en el UI sin propagar la excepción.
+         *
+         * @async
+         * @param {string} nombreCiudad - Nombre (y opcionalmente país) de la ciudad a buscar,
+         *   ej. `'Tokio'` o `'Tokio, Japón'`.
+         * @returns {Promise<void>}
+         *
+         * @example
+         * await buscarCiudad('Tokio, Japón');
+         * await buscarCiudad('Nueva York');
+         */
         async function buscarCiudad(nombreCiudad) {
             cerrarSugerencias();
             mostrarCargando(`Buscando "${nombreCiudad}"…`);
@@ -331,8 +549,22 @@
         }
 
         /**
-         * Versión directa: recibe un objeto candidato ya resuelto desde el dropdown
-         * para evitar una segunda llamada a la API de geocodificación.
+         * Búsqueda optimizada que usa un candidato ya resuelto desde el dropdown de
+         * autocompletado, evitando una segunda llamada a la API de geocodificación al
+         * reutilizar las coordenadas ya disponibles en el objeto candidato.
+         *
+         * @async
+         * @param {object} candidato - Objeto candidato crudo devuelto por `buscarCandidatos`.
+         * @param {string} candidato.name - Nombre de la ciudad.
+         * @param {number} candidato.latitude - Latitud de la ciudad.
+         * @param {number} candidato.longitude - Longitud de la ciudad.
+         * @param {string} [candidato.country] - Nombre del país (opcional).
+         * @returns {Promise<void>}
+         *
+         * @example
+         * await buscarCandidatoDirecto({
+         *   name: 'Sevilla', latitude: 37.38, longitude: -5.97, country: 'España'
+         * });
          */
         async function buscarCandidatoDirecto(candidato) {
             cerrarSugerencias();
@@ -350,6 +582,21 @@
             }
         }
 
+        /**
+         * Flujo de búsqueda por GPS: resuelve el nombre de ciudad mediante geocodificación
+         * inversa (Nominatim) y obtiene el pronóstico del clima para las coordenadas dadas.
+         * Captura cualquier error y lo muestra en el UI sin propagar la excepción.
+         *
+         * @async
+         * @param {number} lat - Latitud obtenida del API `navigator.geolocation`.
+         * @param {number} lon - Longitud obtenida del API `navigator.geolocation`.
+         * @returns {Promise<void>}
+         *
+         * @example
+         * navigator.geolocation.getCurrentPosition(
+         *   (pos) => buscarPorCoordenadas(pos.coords.latitude, pos.coords.longitude)
+         * );
+         */
         async function buscarPorCoordenadas(lat, lon) {
             mostrarCargando('Obteniendo clima por GPS…');
             try {
@@ -373,7 +620,16 @@
         let indiceActivo        = -1;  // Índice resaltado con teclado
         let timerDebounce       = null;
 
-        /** Elimina el dropdown si existe. */
+        /**
+         * Elimina el dropdown de sugerencias del DOM si existe, reinicia el índice de
+         * navegación por teclado a `-1` y actualiza el atributo ARIA `aria-expanded`
+         * del input a `false` para accesibilidad.
+         *
+         * @returns {void}
+         *
+         * @example
+         * cerrarSugerencias(); // Cierra el dropdown y restaura el estado de navegación
+         */
         function cerrarSugerencias() {
             const lista = searchWrapper.querySelector('.suggestions-list');
             if (lista) lista.remove();
@@ -381,7 +637,19 @@
             searchInput.setAttribute('aria-expanded', 'false');
         }
 
-        /** Renderiza el dropdown con los resultados de `sugerenciasActuales`. */
+        /**
+         * Construye e inserta en el DOM el dropdown de sugerencias de autocompletado
+         * a partir del arreglo `sugerenciasActuales`. Cada ítem muestra un icono de pin,
+         * el nombre de la ciudad y un subtítulo con región y país. Asigna el evento
+         * `mousedown` (en lugar de `click`) para evitar que el `blur` del input
+         * se dispare antes de procesar la selección.
+         *
+         * @returns {void}
+         *
+         * @example
+         * sugerenciasActuales = await buscarCandidatos('Bar', 5);
+         * renderizarSugerencias(); // Inserta lista con hasta 5 sugerencias en el DOM
+         */
         function renderizarSugerencias() {
             cerrarSugerencias();
             if (!sugerenciasActuales.length) return;
@@ -417,7 +685,17 @@
             searchWrapper.appendChild(lista);
         }
 
-        /** Actualiza qué ítem del dropdown está visualmente activo. */
+        /**
+         * Sincroniza el resaltado visual del dropdown con el valor de `indiceActivo`,
+         * añadiendo la clase CSS `active` al ítem correspondiente y quitándola del resto.
+         * Diseñada para ser invocada tras cada pulsación de `ArrowUp` o `ArrowDown`.
+         *
+         * @returns {void}
+         *
+         * @example
+         * indiceActivo = 2;
+         * actualizarItemActivo(); // Resalta el tercer ítem (.suggestion-item) del dropdown
+         */
         function actualizarItemActivo() {
             const items = searchWrapper.querySelectorAll('.suggestion-item');
             items.forEach((el, i) => el.classList.toggle('active', i === indiceActivo));
@@ -503,6 +781,19 @@
         // ============================================================
         //  CARGA INICIAL — Detección por IP con fallback
         // ============================================================
+        /**
+         * Punto de entrada de la aplicación. Detecta automáticamente la ciudad del usuario
+         * consultando la API de geolocalización por IP (ipapi.co) con un timeout de 4 segundos.
+         * Si la petición falla, se agota el tiempo de espera o la API no devuelve ciudad,
+         * carga `'Santiago de Cali'` como ciudad de fallback garantizado.
+         *
+         * @async
+         * @returns {Promise<void>}
+         *
+         * @example
+         * // Invocada automáticamente al finalizar la carga del DOM:
+         * inicializar();
+         */
         async function inicializar() {
             const CIUDAD_FALLBACK = 'Santiago de Cali';
             try {
