@@ -17,14 +17,18 @@ Al cargar, la app detecta automáticamente la ciudad del usuario mediante su dir
 | Funcionalidad | Descripción |
 |---|---|
 | 🔍 **Búsqueda por ciudad** | Campo de texto con autocompletado en tiempo real (debounce de 300 ms). Muestra hasta 7 sugerencias con nombre, provincia y país. |
+| 🕐 **Historial de búsquedas** | Al hacer foco en el input o borrarlo, muestra las últimas 5 ciudades consultadas. Persiste en `localStorage`. |
 | ⌨️ **Navegación por teclado** | Las sugerencias del dropdown se recorren con `↑` `↓`, se confirman con `Enter` y se descartan con `Escape`. |
 | 📍 **Botón "Usar ubicación actual"** | Solicita permiso de geolocalización al navegador (GPS) y resuelve el nombre de la ciudad mediante geocodificación inversa con Nominatim. |
 | 🌡️ **Temperatura actual** | Temperatura en °C junto al emoji y descripción en español del estado del cielo (basado en códigos WMO). |
 | 💧 **Humedad relativa** | Porcentaje de humedad del aire en el momento de la consulta. |
 | 🌡️ **Sensación térmica** | Temperatura aparente percibida por el cuerpo (`apparent_temperature`). |
-| 💨 **Velocidad del viento** | Viento en km/h medido a 10 m de altura. |
+| 💨 **Viento con dirección** | Velocidad en km/h y punto cardinal de procedencia (N, NE, E, SE, S, SO, O, NO). |
 | 🔆 **Índice UV** | Valor numérico con clasificación textual: Bajo / Moderado / Alto / Muy alto / Extremo. |
-| 📅 **Pronóstico de 5 días** | Tarjetas diarias con emoji del estado, temperatura máxima y mínima. El primer día se etiqueta como "Hoy". |
+| 📅 **Pronóstico de 5 días** | Tarjetas diarias con emoji, temperatura máxima/mínima y probabilidad de lluvia (si > 0%). El primer día se etiqueta como "Hoy". |
+| 🔄 **Actualización manual** | Botón de refresco junto a la hora de última consulta; repite la petición sin recargar la página. |
+| 🌈 **Fondo dinámico** | El gradiente de fondo del dashboard cambia según la condición meteorológica (soleado, nublado, lluvia, nieve, tormenta, niebla). |
+| 🌙 **Modo oscuro** | Toggle claro/oscuro con persistencia en `localStorage`. Respeta automáticamente la preferencia del sistema operativo (`prefers-color-scheme`). |
 | 🌐 **Detección por IP** | Al iniciar, la app consulta `ipapi.co` para obtener la ciudad del usuario sin intervención manual. |
 | 📱 **Diseño responsive** | El layout se adapta a pantallas móviles (breakpoint en 620 px). |
 
@@ -116,8 +120,8 @@ Obtiene el clima actual y el pronóstico diario a partir de coordenadas.
 GET https://api.open-meteo.com/v1/forecast
     ?latitude={lat}
     &longitude={lon}
-    &current=temperature_2m,weather_code,relative_humidity_2m,apparent_temperature,wind_speed_10m,uv_index
-    &daily=weather_code,temperature_2m_max,temperature_2m_min
+    &current=temperature_2m,weather_code,relative_humidity_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,uv_index
+    &daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max
     &forecast_days=5
     &timezone=auto
 ```
@@ -172,6 +176,7 @@ La aplicación contempla los siguientes escenarios de fallo y los comunica visua
 | Navegador sin soporte de geolocalización | Muestra: _"Tu navegador no soporta geolocalización."_ |
 | ipapi.co no disponible al iniciar | Realiza un fallback automático a **Santiago de Cali** sin mostrar error al usuario. |
 | Timeout de ipapi.co (> 4 s) | La petición es abortada con `AbortController` y se ejecuta el fallback silencioso. |
+| `localStorage` con historial corrupto | `obtenerHistorial()` captura el error de parseo y devuelve `[]`; la app continúa sin historial. |
 
 ---
 
@@ -191,11 +196,16 @@ La aplicación contempla los siguientes escenarios de fallo y los comunica visua
 
 ## 🔮 Mejoras Futuras
 
-- [ ] **Modo oscuro** — Implementar un toggle que persista la preferencia en `localStorage`.
+- [x] **Modo oscuro** — Toggle claro/oscuro con persistencia en `localStorage` y respeto a `prefers-color-scheme`.
+- [x] **Probabilidad de lluvia** — Porcentaje diario en las tarjetas del pronóstico (`precipitation_probability_max`).
+- [x] **Dirección del viento** — Punto cardinal (N, NE, E…) calculado desde `wind_direction_10m`.
+- [x] **Historial de búsquedas** — Últimas 5 ciudades consultadas, accesibles al enfocar el input.
+- [x] **Indicador de actualización** — Hora de última consulta con botón de refresco sin recarga.
+- [x] **Fondo dinámico** — Gradiente del cuerpo de la página adaptado a la condición meteorológica actual.
 - [ ] **Unidades configurables** — Permitir cambiar entre °C / °F y km/h / mph.
 - [ ] **Pronóstico horario** — Añadir una vista de las próximas 24 horas por franjas.
-- [ ] **Animaciones de fondo dinámicas** — Adaptar el fondo visual (degradados, partículas) según el estado del cielo.
-- [ ] **Historial de búsquedas** — Guardar en `localStorage` las últimas ciudades consultadas para acceso rápido.
+- [ ] **Calidad del aire (AQI)** — Integrar la API gratuita de calidad del aire de Open-Meteo.
+- [ ] **Animaciones de fondo dinámicas** — Partículas o SVG animados según el estado del cielo.
 - [ ] **Mapa interactivo** — Integrar Leaflet.js para seleccionar la ciudad haciendo clic sobre un mapa.
 - [ ] **PWA** — Añadir `manifest.json` y Service Worker para instalación y uso sin conexión.
 - [ ] **Internacionalización (i18n)** — Soporte para múltiples idiomas en la interfaz.

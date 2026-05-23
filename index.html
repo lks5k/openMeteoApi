@@ -39,6 +39,9 @@
                 </svg>
                 <span>Usar ubicación actual</span>
             </button>
+            <button id="btn-tema" class="btn-tema" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema claro/oscuro">
+                <span id="tema-icon">🌙</span>
+            </button>
         </div>
 
         <!-- Cuerpo del dashboard (se inyecta dinámicamente) -->
@@ -143,6 +146,188 @@
         function diaCorto(fechaISO) {
             const d = new Date(fechaISO + 'T12:00:00Z');
             return DIAS_CORTOS[d.getUTCDay()];
+        }
+
+        // ============================================================
+        //  ESTADO GLOBAL
+        // ============================================================
+
+        /** Última ubicación consultada exitosamente; permite al botón refresh reusar coords. */
+        let ultimaConsulta = null;
+
+        // ============================================================
+        //  HELPERS DE VIENTO, FONDO DINÁMICO, TEMA E HISTORIAL
+        // ============================================================
+
+        /**
+         * Convierte grados de dirección del viento (0-360) al punto cardinal más cercano,
+         * usando una rosa de 8 direcciones con intervalos de 45°.
+         *
+         * @param {number} grados - Ángulo de procedencia del viento en grados (0 = Norte).
+         * @returns {string} Abreviatura del punto cardinal en español: N, NE, E, SE, S, SO, O, NO.
+         *
+         * @example
+         * gradosACardinal(0);   // 'N'
+         * gradosACardinal(90);  // 'E'
+         * gradosACardinal(225); // 'SO'
+         */
+        function gradosACardinal(grados) {
+            const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+            return dirs[Math.round(grados / 45) % 8];
+        }
+
+        /**
+         * Asigna al `<body>` una clase CSS de fondo dinámico según el código WMO del clima actual.
+         * Elimina cualquier clase previa `wx-*` antes de aplicar la nueva, garantizando
+         * un estado limpio en cada actualización del dashboard.
+         * En tema oscuro el fondo no cambia (la clase queda en el DOM pero no aplica estilos,
+         * ya que el selector CSS usa `html:not([data-tema="dark"])`).
+         *
+         * @param {number} weatherCode - Código WMO del estado meteorológico actual.
+         * @returns {void}
+         *
+         * @example
+         * aplicarFondoDinamico(0);  // body.wx-sunny  → gradiente amarillo-azul
+         * aplicarFondoDinamico(63); // body.wx-rainy  → gradiente azul
+         * aplicarFondoDinamico(95); // body.wx-stormy → gradiente violeta
+         */
+        function aplicarFondoDinamico(weatherCode) {
+            const clases = ['wx-sunny', 'wx-cloudy', 'wx-rainy', 'wx-snowy', 'wx-stormy', 'wx-foggy'];
+            document.body.classList.remove(...clases);
+
+            let clase;
+            if (weatherCode <= 1)                                               clase = 'wx-sunny';
+            else if (weatherCode <= 3)                                          clase = 'wx-cloudy';
+            else if (weatherCode <= 48)                                         clase = 'wx-foggy';
+            else if (weatherCode <= 67 || (weatherCode >= 80 && weatherCode <= 82)) clase = 'wx-rainy';
+            else if ((weatherCode >= 71 && weatherCode <= 77) ||
+                     weatherCode === 85 || weatherCode === 86)                  clase = 'wx-snowy';
+            else                                                                clase = 'wx-stormy';
+
+            document.body.classList.add(clase);
+        }
+
+        /**
+         * Aplica el tema (claro u oscuro) al elemento raíz `<html>`, actualiza el icono
+         * del botón de alternancia y persiste la elección en `localStorage`.
+         *
+         * @param {'light'|'dark'} tema - Identificador del tema a aplicar.
+         * @returns {void}
+         */
+        function aplicarTema(tema) {
+            document.documentElement.dataset.tema = tema;
+            const icono = document.getElementById('tema-icon');
+            if (icono) icono.textContent = tema === 'dark' ? '☀️' : '🌙';
+            localStorage.setItem('tema', tema);
+        }
+
+        /**
+         * Inicializa el tema al cargar la página consultando, en orden de prioridad:
+         * 1. La preferencia guardada en `localStorage`.
+         * 2. La preferencia del sistema operativo (`prefers-color-scheme`).
+         * 3. Tema claro como valor por defecto.
+         *
+         * @returns {void}
+         */
+        function inicializarTema() {
+            const guardado     = localStorage.getItem('tema');
+            const preferOscuro = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            aplicarTema(guardado ?? (preferOscuro ? 'dark' : 'light'));
+        }
+
+        /**
+         * Guarda una ciudad en el historial de búsquedas almacenado en `localStorage`.
+         * La entrada se inserta al inicio, se deduplica (elimina entradas previas iguales)
+         * y el historial se recorta a un máximo de 5 elementos.
+         *
+         * @param {string} ciudad - Nombre de la ciudad buscada.
+         * @param {string} pais   - Nombre del país (cadena vacía si no aplica).
+         * @returns {void}
+         */
+        function guardarEnHistorial(ciudad, pais) {
+            const etiqueta = pais ? `${ciudad}, ${pais}` : ciudad;
+            const historial = obtenerHistorial().filter(e => e !== etiqueta);
+            historial.unshift(etiqueta);
+            localStorage.setItem('historial-ciudades', JSON.stringify(historial.slice(0, 5)));
+        }
+
+        /**
+         * Lee y devuelve el historial de búsquedas desde `localStorage`.
+         * Si la entrada no existe o contiene JSON inválido, devuelve un arreglo vacío
+         * sin propagar el error.
+         *
+         * @returns {string[]} Arreglo de etiquetas de ciudades en formato `"Ciudad, País"`
+         *   o solo `"Ciudad"` si no tiene país, ordenado de más reciente a más antiguo.
+         */
+        function obtenerHistorial() {
+            try {
+                return JSON.parse(localStorage.getItem('historial-ciudades') ?? '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        /**
+         * Construye e inserta en el DOM un dropdown con el historial de búsquedas recientes.
+         * Si el historial está vacío, no inserta nada. Cada ítem del historial muestra
+         * un ícono de reloj y la etiqueta de la ciudad. Al hacer clic, invoca `buscarCiudad`.
+         * Usa `mousedown` en lugar de `click` para evitar la interferencia con el evento
+         * `blur` del input de búsqueda.
+         *
+         * @returns {void}
+         */
+        function renderizarHistorial() {
+            const historial = obtenerHistorial();
+            if (!historial.length) return;
+
+            cerrarSugerencias();
+            searchInput.setAttribute('aria-expanded', 'true');
+
+            const lista = document.createElement('ul');
+            lista.className = 'suggestions-list';
+            lista.setAttribute('role', 'listbox');
+
+            const header = document.createElement('li');
+            header.className = 'dropdown-section-label';
+            header.textContent = 'Búsquedas recientes';
+            header.setAttribute('role', 'presentation');
+            lista.appendChild(header);
+
+            historial.forEach(etiqueta => {
+                const li = document.createElement('li');
+                li.className = 'suggestion-item';
+                li.setAttribute('role', 'option');
+                li.innerHTML = `
+                    <span class="sug-icon">🕐</span>
+                    <span class="sug-city">${etiqueta}</span>`;
+                li.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    buscarCiudad(etiqueta);
+                });
+                lista.appendChild(li);
+            });
+
+            searchWrapper.appendChild(lista);
+        }
+
+        /**
+         * Repite la última consulta meteorológica exitosa usando las coordenadas almacenadas
+         * en `ultimaConsulta`. Anima el botón de refresco durante la petición.
+         * No hace nada si no hay ninguna consulta previa registrada.
+         *
+         * @async
+         * @returns {Promise<void>}
+         */
+        async function refrescar() {
+            if (!ultimaConsulta) return;
+            const btnRefresh = document.querySelector('.btn-refresh');
+            if (btnRefresh) btnRefresh.classList.add('spin');
+            try {
+                const datos = await obtenerClimaPorCoordenadas(ultimaConsulta.latitud, ultimaConsulta.longitud);
+                renderizarDashboard(ultimaConsulta.ciudad, ultimaConsulta.pais, datos);
+            } catch (err) {
+                mostrarError(err.message);
+            }
         }
 
         // ============================================================
@@ -309,27 +494,32 @@
         /**
          * Obtiene el clima actual y el pronóstico de 5 días para unas coordenadas geográficas
          * usando la API de Open-Meteo. Solicita: temperatura, código meteorológico, humedad
-         * relativa, sensación térmica, velocidad del viento e índice UV para el momento actual;
-         * y código, temperatura máxima y mínima diarias para el pronóstico.
+         * relativa, sensación térmica, velocidad del viento, dirección del viento e índice UV
+         * para el momento actual; y código, temperatura máxima/mínima y probabilidad máxima
+         * de precipitación diarias para el pronóstico.
          *
          * @async
          * @param {number} latitud - Latitud geográfica del punto de consulta, ej. `4.71`.
          * @param {number} longitud - Longitud geográfica del punto de consulta, ej. `-74.07`.
          * @returns {Promise<object>} Respuesta JSON de la API con las propiedades
          *   `current` (datos actuales) y `daily` (pronóstico diario).
+         *   `current` incluye: `temperature_2m`, `weather_code`, `relative_humidity_2m`,
+         *   `apparent_temperature`, `wind_speed_10m`, `wind_direction_10m`, `uv_index`.
+         *   `daily` incluye: `time`, `weather_code`, `temperature_2m_max`,
+         *   `temperature_2m_min`, `precipitation_probability_max`.
          * @throws {Error} Si la petición HTTP a la API de predicción meteorológica falla (status no 2xx).
          *
          * @example
          * const datos = await obtenerClimaPorCoordenadas(4.71, -74.07);
-         * // { current: { temperature_2m: 18, weather_code: 3, uv_index: 4, ... },
-         * //   daily:   { time: ['2026-05-22', ...], temperature_2m_max: [20, ...], ... } }
+         * // { current: { temperature_2m: 18, weather_code: 3, wind_direction_10m: 270, uv_index: 4, ... },
+         * //   daily:   { time: ['2026-05-22', ...], precipitation_probability_max: [30, ...], ... } }
          */
         async function obtenerClimaPorCoordenadas(latitud, longitud) {
             const params = new URLSearchParams({
                 latitude:      latitud,
                 longitude:     longitud,
-                current:       'temperature_2m,weather_code,relative_humidity_2m,apparent_temperature,wind_speed_10m,uv_index',
-                daily:         'weather_code,temperature_2m_max,temperature_2m_min',
+                current:       'temperature_2m,weather_code,relative_humidity_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,uv_index',
+                daily:         'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
                 forecast_days: 5,
                 timezone:      'auto',
             });
@@ -429,8 +619,10 @@
         /**
          * Genera e inyecta el HTML completo del dashboard meteorológico en `#dashboard-body`.
          * Renderiza dos secciones: (1) clima actual con temperatura, condición, humedad,
-         * sensación térmica, viento e índice UV; (2) pronóstico de 5 días con tarjetas
-         * individuales por día.
+         * sensación térmica, viento con dirección cardinal, índice UV y la hora de última
+         * actualización con un botón de refresco; (2) pronóstico de 5 días con tarjetas
+         * individuales que incluyen emoji, temperaturas y probabilidad de precipitación.
+         * También aplica el fondo dinámico al `<body>` según el código WMO actual.
          *
          * @param {string} ciudad - Nombre de la ciudad a mostrar en el encabezado.
          * @param {string} pais - Nombre del país (cadena vacía si no aplica).
@@ -441,12 +633,15 @@
          * @param {number} datosAPI.current.relative_humidity_2m - Humedad relativa en %.
          * @param {number} datosAPI.current.apparent_temperature - Sensación térmica en °C.
          * @param {number} datosAPI.current.wind_speed_10m - Velocidad del viento en km/h.
+         * @param {number} datosAPI.current.wind_direction_10m - Dirección del viento en grados (0-360).
          * @param {number} datosAPI.current.uv_index - Índice UV actual.
          * @param {object} datosAPI.daily - Datos del pronóstico diario de 5 días.
          * @param {string[]} datosAPI.daily.time - Arreglo de fechas ISO del pronóstico.
          * @param {number[]} datosAPI.daily.weather_code - Códigos WMO por día.
          * @param {number[]} datosAPI.daily.temperature_2m_max - Temperaturas máximas diarias en °C.
          * @param {number[]} datosAPI.daily.temperature_2m_min - Temperaturas mínimas diarias en °C.
+         * @param {number[]} datosAPI.daily.precipitation_probability_max - Probabilidad máxima
+         *   de precipitación por día en % (0-100).
          * @returns {void}
          *
          * @example
@@ -457,6 +652,8 @@
             const c = datosAPI.current;
             const condicion = resolverCodigo(c.weather_code);
 
+            aplicarFondoDinamico(c.weather_code);
+
             const uv = c.uv_index ?? 0;
             const nivelUV = uv <= 2 ? 'Bajo'
                           : uv <= 5 ? 'Moderado'
@@ -464,14 +661,19 @@
                           : uv <= 10 ? 'Muy alto'
                           : 'Extremo';
 
+            const direccionViento  = gradosACardinal(c.wind_direction_10m ?? 0);
+            const horaActualizada  = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
             const pronosticoHTML = datosAPI.daily.time.map((fecha, i) => {
-                const cod = resolverCodigo(datosAPI.daily.weather_code[i]);
+                const cod  = resolverCodigo(datosAPI.daily.weather_code[i]);
+                const prob = datosAPI.daily.precipitation_probability_max?.[i] ?? 0;
                 return `
                     <div class="forecast-card">
                         <div class="forecast-day">${i === 0 ? 'Hoy' : diaCorto(fecha)}</div>
                         <div class="forecast-emoji">${cod.emoji}</div>
                         <div class="forecast-temp-max">${Math.round(datosAPI.daily.temperature_2m_max[i])}°</div>
                         <div class="forecast-temp-min">${Math.round(datosAPI.daily.temperature_2m_min[i])}°</div>
+                        ${prob > 0 ? `<div class="forecast-precip">💧 ${prob}%</div>` : ''}
                     </div>`;
             }).join('');
 
@@ -480,6 +682,10 @@
                     <div class="current-weather">
                         <div class="city-name">${ciudad}${pais ? ', ' + pais : ''}</div>
                         <div class="current-date">${formatearFechaLarga(datosAPI.daily.time[0])}</div>
+                        <div class="last-updated">
+                            Actualizado a las ${horaActualizada}
+                            <button class="btn-refresh" onclick="refrescar()" title="Actualizar datos">↻</button>
+                        </div>
                         <div class="weather-emoji">${condicion.emoji}</div>
                         <div class="temperature-main">${Math.round(c.temperature_2m)}°C</div>
                         <div class="weather-description">${condicion.texto}</div>
@@ -499,6 +705,7 @@
                             <div class="detail-label">Viento</div>
                             <div class="detail-icon">💨</div>
                             <div class="detail-value">${Math.round(c.wind_speed_10m)} <span class="detail-sub">km/h</span></div>
+                            <div class="detail-dir">${direccionViento}</div>
                         </div>
                         <div class="detail-card">
                             <div class="detail-label">Índice UV</div>
@@ -542,6 +749,8 @@
                     ? `${ubicacion.ciudad}, ${ubicacion.pais}`
                     : ubicacion.ciudad;
                 searchInput.value = etiqueta;
+                guardarEnHistorial(ubicacion.ciudad, ubicacion.pais);
+                ultimaConsulta = { latitud: ubicacion.latitud, longitud: ubicacion.longitud, ciudad: ubicacion.ciudad, pais: ubicacion.pais };
             } catch (err) {
                 console.error('[buscarCiudad]', err);
                 mostrarError(err.message);
@@ -576,6 +785,8 @@
             try {
                 const datos = await obtenerClimaPorCoordenadas(candidato.latitude, candidato.longitude);
                 renderizarDashboard(candidato.name, candidato.country ?? '', datos);
+                guardarEnHistorial(candidato.name, candidato.country ?? '');
+                ultimaConsulta = { latitud: candidato.latitude, longitud: candidato.longitude, ciudad: candidato.name, pais: candidato.country ?? '' };
             } catch (err) {
                 console.error('[buscarCandidatoDirecto]', err);
                 mostrarError(err.message);
@@ -604,6 +815,7 @@
                 const datos = await obtenerClimaPorCoordenadas(lat, lon);
                 renderizarDashboard(nombreCiudad, '', datos);
                 searchInput.value = nombreCiudad;
+                ultimaConsulta = { latitud: lat, longitud: lon, ciudad: nombreCiudad, pais: '' };
             } catch (err) {
                 console.error('[buscarPorCoordenadas]', err);
                 mostrarError('No se pudo obtener el clima por GPS: ' + err.message);
@@ -708,6 +920,8 @@
 
             if (query.length < 2) {
                 cerrarSugerencias();
+                // Al borrar completamente el input, mostrar historial si existe
+                if (query.length === 0) renderizarHistorial();
                 return;
             }
 
@@ -719,6 +933,13 @@
                     cerrarSugerencias();
                 }
             }, 300);
+        });
+
+        // Mostrar historial al enfocar el input si no hay texto suficiente para autocomplete
+        searchInput.addEventListener('focus', () => {
+            if (searchInput.value.trim().length < 2) {
+                renderizarHistorial();
+            }
         });
 
         // Teclado: navegación y selección desde el dropdown
@@ -763,6 +984,14 @@
         });
 
         // ============================================================
+        //  BOTÓN TEMA CLARO/OSCURO
+        // ============================================================
+        document.getElementById('btn-tema').addEventListener('click', () => {
+            const actual = document.documentElement.dataset.tema ?? 'light';
+            aplicarTema(actual === 'dark' ? 'light' : 'dark');
+        });
+
+        // ============================================================
         //  BOTÓN GPS
         // ============================================================
         document.getElementById('btn-gps').addEventListener('click', () => {
@@ -795,6 +1024,7 @@
          * inicializar();
          */
         async function inicializar() {
+            inicializarTema();
             const CIUDAD_FALLBACK = 'Santiago de Cali';
             try {
                 const ctrl  = new AbortController();

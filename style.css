@@ -1,3 +1,40 @@
+/* ===== VARIABLES DE TEMA ===== */
+:root {
+    --bg-body:        #dce6f5;
+    --bg-card:        #ffffff;
+    --bg-surface:     #f3f7fe;
+    --border:         #d0daea;
+    --text-primary:   #1e2d45;
+    --text-secondary: #4a6480;
+    --text-sub:       #7a90a8;
+    --text-muted:     #9aabbd;
+    --accent:         #4a90d9;
+    --temp-color:     #2979d4;
+    --error-color:    #d94a4a;
+    --shadow-a:       rgba(100, 130, 180, 0.18);
+    --shadow-b:       rgba(100, 130, 180, 0.12);
+    --shadow-c:       rgba(100, 130, 180, 0.11);
+    --shadow-d:       rgba(100, 130, 180, 0.08);
+}
+
+html[data-tema="dark"] {
+    --bg-body:        #0f172a;
+    --bg-card:        #1e293b;
+    --bg-surface:     #263248;
+    --border:         #2d4060;
+    --text-primary:   #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-sub:       #7a8ea8;
+    --text-muted:     #4a6480;
+    --accent:         #60a5fa;
+    --temp-color:     #60a5fa;
+    --error-color:    #f87171;
+    --shadow-a:       rgba(0, 0, 0, 0.40);
+    --shadow-b:       rgba(0, 0, 0, 0.30);
+    --shadow-c:       rgba(0, 0, 0, 0.35);
+    --shadow-d:       rgba(0, 0, 0, 0.25);
+}
+
 /* ===== RESET Y BASE ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -8,23 +45,31 @@ body {
     justify-content: center;
     align-items: flex-start;
     padding: 40px 20px;
-    /* Fondo azul-gris claro que da contexto sin robar protagonismo */
-    background: #dce6f5;
+    background: var(--bg-body);
+    transition: background 0.4s ease;
 }
+
+/* ===== FONDOS DINÁMICOS (solo tema claro) ===== */
+html:not([data-tema="dark"]) body.wx-sunny  { background: linear-gradient(145deg, #fef9c3 0%, #dbeafe 100%); }
+html:not([data-tema="dark"]) body.wx-cloudy { background: linear-gradient(145deg, #e2e8f0 0%, #cbd5e1 100%); }
+html:not([data-tema="dark"]) body.wx-rainy  { background: linear-gradient(145deg, #bfdbfe 0%, #93c5fd 100%); }
+html:not([data-tema="dark"]) body.wx-snowy  { background: linear-gradient(145deg, #e0f2fe 0%, #f8fafc 100%); }
+html:not([data-tema="dark"]) body.wx-stormy { background: linear-gradient(145deg, #c4b5fd 0%, #818cf8 100%); }
+html:not([data-tema="dark"]) body.wx-foggy  { background: linear-gradient(145deg, #e2e8f0 0%, #d1d5db 100%); }
 
 /* ===== TARJETA PRINCIPAL ===== */
 .dashboard {
-    background: #ffffff;
+    background: var(--bg-card);
     border-radius: 24px;
-    /* Relieve principal: sombra difuminada + reflejo superior blanco */
     box-shadow:
-        0 2px 0 #fff inset,
-        0 8px 32px rgba(100, 130, 180, 0.18),
-        0 2px 6px rgba(100, 130, 180, 0.12);
+        0 2px 0 rgba(255, 255, 255, 0.15) inset,
+        0 8px 32px var(--shadow-a),
+        0 2px 6px var(--shadow-b);
     width: 100%;
     max-width: 820px;
     padding: 32px;
-    color: #1e2d45;
+    color: var(--text-primary);
+    transition: background 0.3s, color 0.3s, box-shadow 0.3s;
 }
 
 /* ===== BARRA DE BÚSQUEDA ===== */
@@ -45,32 +90,31 @@ body {
     width: 100%;
     padding: 12px 20px;
     border-radius: 50px;
-    border: 1.5px solid #d0daea;
-    background: #f3f7fe;
-    color: #1e2d45;
+    border: 1.5px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-primary);
     font-size: 15px;
     outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    /* Relieve sutil en el input */
-    box-shadow: inset 0 2px 4px rgba(180, 200, 230, 0.25);
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.3s, color 0.3s;
+    box-shadow: inset 0 2px 4px var(--shadow-d);
 }
-.search-input::placeholder { color: #9aabbd; }
+.search-input::placeholder { color: var(--text-muted); }
 .search-input:focus {
-    border-color: #4a90d9;
-    box-shadow: inset 0 2px 4px rgba(180, 200, 230, 0.25),
+    border-color: var(--accent);
+    box-shadow: inset 0 2px 4px var(--shadow-d),
                 0 0 0 3px rgba(74, 144, 217, 0.12);
 }
 
-/* ===== DROPDOWN DE SUGERENCIAS ===== */
+/* ===== DROPDOWN DE SUGERENCIAS E HISTORIAL ===== */
 .suggestions-list {
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
     right: 0;
-    background: #fff;
-    border: 1.5px solid #d0daea;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
     border-radius: 16px;
-    box-shadow: 0 8px 24px rgba(100, 130, 180, 0.18);
+    box-shadow: 0 8px 24px var(--shadow-a);
     overflow: hidden;
     z-index: 100;
     animation: fadeDown 0.15s ease;
@@ -87,42 +131,72 @@ body {
     padding: 11px 18px;
     cursor: pointer;
     font-size: 14px;
-    color: #1e2d45;
-    border-bottom: 1px solid #f0f4fb;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
     transition: background 0.15s;
 }
 .suggestion-item:last-child { border-bottom: none; }
 .suggestion-item:hover,
-.suggestion-item.active {
-    background: #f0f6ff;
-}
+.suggestion-item.active { background: var(--bg-surface); }
 .suggestion-item .sug-icon  { font-size: 17px; flex-shrink: 0; }
 .suggestion-item .sug-city  { font-weight: 600; }
-.suggestion-item .sug-extra { color: #7a90a8; font-size: 13px; margin-left: auto; white-space: nowrap; }
+.suggestion-item .sug-extra { color: var(--text-sub); font-size: 13px; margin-left: auto; white-space: nowrap; }
 
-/* ===== BOTÓN GPS ===== */
+/* Encabezado de sección en el dropdown (historial de búsquedas) */
+.dropdown-section-label {
+    padding: 8px 18px 5px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    cursor: default;
+}
+
+/* ===== BOTONES DE ACCIÓN ===== */
 .btn-location {
     display: flex;
     align-items: center;
     gap: 7px;
     padding: 11px 18px;
     border-radius: 50px;
-    border: 1.5px solid #d0daea;
-    background: #f3f7fe;
-    color: #4a6fa5;
+    border: 1.5px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--accent);
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.2s, box-shadow 0.2s, transform 0.12s;
-    box-shadow: 0 2px 6px rgba(100, 130, 180, 0.12);
+    transition: background 0.2s, box-shadow 0.2s, transform 0.12s, border-color 0.3s;
+    box-shadow: 0 2px 6px var(--shadow-b);
 }
 .btn-location:hover {
-    background: #e4eeff;
-    box-shadow: 0 4px 12px rgba(74, 144, 217, 0.18);
+    box-shadow: 0 4px 12px var(--shadow-a);
+    filter: brightness(1.05);
 }
 .btn-location:active { transform: scale(0.97); }
 .btn-location svg { width: 17px; height: 17px; flex-shrink: 0; }
+
+/* Botón de alternancia de tema claro/oscuro */
+.btn-tema {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--bg-surface);
+    font-size: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.12s, border-color 0.3s;
+    box-shadow: 0 2px 6px var(--shadow-b);
+}
+.btn-tema:hover { box-shadow: 0 4px 12px var(--shadow-a); }
+.btn-tema:active { transform: scale(0.93); }
 
 /* ===== CUERPO: DOS COLUMNAS ===== */
 .main-content {
@@ -139,26 +213,51 @@ body {
 .city-name {
     font-size: 24px;
     font-weight: 700;
-    color: #1e2d45;
+    color: var(--text-primary);
     line-height: 1.2;
 }
 .current-date {
     font-size: 13px;
-    color: #7a90a8;
-    margin: 5px 0 18px;
+    color: var(--text-sub);
+    margin: 5px 0 4px;
 }
+
+/* Fila de hora de última actualización y botón refresh */
+.last-updated {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+}
+.btn-refresh {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    transition: color 0.2s, transform 0.3s;
+    line-height: 1;
+}
+.btn-refresh:hover { color: var(--accent); }
+.btn-refresh.spin  { animation: spin 0.6s linear; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .weather-emoji    { font-size: 68px; line-height: 1; margin-bottom: 8px; }
 .temperature-main {
     font-size: 72px;
     font-weight: 800;
-    color: #2979d4;
+    color: var(--temp-color);
     line-height: 1;
     letter-spacing: -3px;
 }
 .weather-description {
     font-size: 16px;
     font-weight: 500;
-    color: #4a6480;
+    color: var(--text-secondary);
     margin-top: 10px;
 }
 
@@ -170,42 +269,43 @@ body {
 }
 
 .detail-card {
-    background: #f3f7fe;
+    background: var(--bg-surface);
     border-radius: 16px;
     padding: 16px 14px;
     display: flex;
     flex-direction: column;
     gap: 5px;
-    /* Relieve elevado */
     box-shadow:
-        0 1px 0 #fff inset,
-        0 3px 8px rgba(100, 130, 180, 0.12),
-        0 1px 3px rgba(100, 130, 180, 0.08);
-    transition: box-shadow 0.2s, transform 0.2s;
+        0 1px 0 rgba(255, 255, 255, 0.15) inset,
+        0 3px 8px var(--shadow-b),
+        0 1px 3px var(--shadow-d);
+    transition: box-shadow 0.2s, transform 0.2s, background 0.3s;
 }
 .detail-card:hover {
     box-shadow:
-        0 1px 0 #fff inset,
-        0 6px 16px rgba(74, 144, 217, 0.15),
-        0 2px 6px rgba(100, 130, 180, 0.1);
+        0 1px 0 rgba(255, 255, 255, 0.15) inset,
+        0 6px 16px var(--shadow-a),
+        0 2px 6px var(--shadow-b);
     transform: translateY(-2px);
 }
 
-.detail-label { font-size: 11px; color: #9aabbd; text-transform: uppercase; letter-spacing: 0.9px; }
+.detail-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.9px; }
 .detail-icon  { font-size: 21px; }
-.detail-value { font-size: 21px; font-weight: 700; color: #1e2d45; }
-.detail-sub   { font-size: 12px; font-weight: 400; color: #7a90a8; }
+.detail-value { font-size: 21px; font-weight: 700; color: var(--text-primary); }
+.detail-sub   { font-size: 12px; font-weight: 400; color: var(--text-sub); }
+/* Dirección del viento en formato cardinal (N, NE, S…) */
+.detail-dir   { font-size: 12px; font-weight: 600; color: var(--text-sub); margin-top: -2px; }
 
 /* ===== PRONÓSTICO 5 DÍAS ===== */
 .forecast-section {
-    border-top: 1.5px solid #edf1f8;
+    border-top: 1.5px solid var(--border);
     padding-top: 20px;
 }
 .forecast-title {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1.2px;
-    color: #9aabbd;
+    color: var(--text-muted);
     margin-bottom: 14px;
 }
 .forecast-row {
@@ -214,7 +314,7 @@ body {
     gap: 10px;
 }
 .forecast-card {
-    background: #f3f7fe;
+    background: var(--bg-surface);
     border-radius: 16px;
     padding: 14px 8px;
     text-align: center;
@@ -222,34 +322,42 @@ body {
     flex-direction: column;
     align-items: center;
     gap: 5px;
-    /* Mismo relieve que detail-card */
     box-shadow:
-        0 1px 0 #fff inset,
-        0 3px 8px rgba(100, 130, 180, 0.11),
-        0 1px 3px rgba(100, 130, 180, 0.07);
-    transition: box-shadow 0.2s, transform 0.15s;
+        0 1px 0 rgba(255, 255, 255, 0.15) inset,
+        0 3px 8px var(--shadow-c),
+        0 1px 3px var(--shadow-d);
+    transition: box-shadow 0.2s, transform 0.15s, background 0.3s;
 }
 .forecast-card:hover {
     box-shadow:
-        0 1px 0 #fff inset,
-        0 6px 16px rgba(74, 144, 217, 0.15);
+        0 1px 0 rgba(255, 255, 255, 0.15) inset,
+        0 6px 16px var(--shadow-a);
     transform: translateY(-2px);
 }
-.forecast-day      { font-size: 11px; font-weight: 600; color: #7a90a8; text-transform: uppercase; letter-spacing: 0.5px; }
+.forecast-day      { font-size: 11px; font-weight: 600; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; }
 .forecast-emoji    { font-size: 26px; }
-.forecast-temp-max { font-size: 15px; font-weight: 700; color: #1e2d45; }
-.forecast-temp-min { font-size: 13px; color: #9aabbd; }
+.forecast-temp-max { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.forecast-temp-min { font-size: 13px; color: var(--text-muted); }
+/* Probabilidad de precipitación diaria */
+.forecast-precip   {
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
 
 /* ===== ESTADOS DE UI ===== */
 .loading-overlay {
     text-align: center;
     padding: 50px 0;
-    color: #9aabbd;
+    color: var(--text-muted);
     font-style: italic;
     font-size: 15px;
 }
 .error-msg {
-    color: #d94a4a;
+    color: var(--error-color);
     font-weight: 600;
     text-align: center;
     padding: 20px;
