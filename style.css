@@ -15,6 +15,7 @@
     --shadow-b:       rgba(100, 130, 180, 0.12);
     --shadow-c:       rgba(100, 130, 180, 0.11);
     --shadow-d:       rgba(100, 130, 180, 0.08);
+    --bg-dashboard:   rgba(255, 255, 255, 0.82);
 }
 
 html[data-tema="dark"] {
@@ -33,10 +34,17 @@ html[data-tema="dark"] {
     --shadow-b:       rgba(0, 0, 0, 0.30);
     --shadow-c:       rgba(0, 0, 0, 0.35);
     --shadow-d:       rgba(0, 0, 0, 0.25);
+    --bg-dashboard:   rgba(15, 23, 42, 0.85);
 }
 
 /* ===== RESET Y BASE ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* html lleva el fondo de color base; body es transparente para revelar #fondo-ciudad */
+html {
+    background: var(--bg-body);
+    transition: background 0.4s ease;
+}
 
 body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -44,23 +52,49 @@ body {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 40px 20px;
-    background: var(--bg-body);
-    transition: background 0.4s ease;
+    padding: 40px 20px 110px; /* padding-bottom: espacio para la barra de caption */
+    background: transparent;
 }
 
-/* ===== FONDOS DINÁMICOS (solo tema claro) ===== */
-html:not([data-tema="dark"]) body.wx-sunny  { background: linear-gradient(145deg, #fef9c3 0%, #dbeafe 100%); }
-html:not([data-tema="dark"]) body.wx-cloudy { background: linear-gradient(145deg, #e2e8f0 0%, #cbd5e1 100%); }
-html:not([data-tema="dark"]) body.wx-rainy  { background: linear-gradient(145deg, #bfdbfe 0%, #93c5fd 100%); }
-html:not([data-tema="dark"]) body.wx-snowy  { background: linear-gradient(145deg, #e0f2fe 0%, #f8fafc 100%); }
-html:not([data-tema="dark"]) body.wx-stormy { background: linear-gradient(145deg, #c4b5fd 0%, #818cf8 100%); }
-html:not([data-tema="dark"]) body.wx-foggy  { background: linear-gradient(145deg, #e2e8f0 0%, #d1d5db 100%); }
+/* ===== CAPA DE FONDO (imagen de ciudad + gradiente meteorológico) ===== */
+#fondo-ciudad {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 1;
+    transition: opacity 0.4s ease;
+}
 
-/* ===== TARJETA PRINCIPAL ===== */
+/* Overlay oscuro que solo aparece cuando hay imagen activa */
+#fondo-ciudad.con-imagen::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.38);
+    pointer-events: none;
+}
+html[data-tema="dark"] #fondo-ciudad.con-imagen::after {
+    background: rgba(0, 0, 0, 0.55);
+}
+
+/* Fondos dinámicos meteorológicos (solo tema claro, sin imagen activa) */
+html:not([data-tema="dark"]) #fondo-ciudad.wx-sunny  { background: linear-gradient(145deg, #fef9c3 0%, #dbeafe 100%); }
+html:not([data-tema="dark"]) #fondo-ciudad.wx-cloudy { background: linear-gradient(145deg, #e2e8f0 0%, #cbd5e1 100%); }
+html:not([data-tema="dark"]) #fondo-ciudad.wx-rainy  { background: linear-gradient(145deg, #bfdbfe 0%, #93c5fd 100%); }
+html:not([data-tema="dark"]) #fondo-ciudad.wx-snowy  { background: linear-gradient(145deg, #e0f2fe 0%, #f8fafc 100%); }
+html:not([data-tema="dark"]) #fondo-ciudad.wx-stormy { background: linear-gradient(145deg, #c4b5fd 0%, #818cf8 100%); }
+html:not([data-tema="dark"]) #fondo-ciudad.wx-foggy  { background: linear-gradient(145deg, #e2e8f0 0%, #d1d5db 100%); }
+
+/* ===== TARJETA PRINCIPAL — vidrio esmerilado sobre el fondo ===== */
 .dashboard {
-    background: var(--bg-card);
+    background: var(--bg-dashboard);
+    backdrop-filter: blur(18px) saturate(130%);
+    -webkit-backdrop-filter: blur(18px) saturate(130%);
     border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
     box-shadow:
         0 2px 0 rgba(255, 255, 255, 0.15) inset,
         0 8px 32px var(--shadow-a),
@@ -375,4 +409,356 @@ html:not([data-tema="dark"]) body.wx-foggy  { background: linear-gradient(145deg
     .temperature-main { font-size: 56px; }
     .btn-location span { display: none; }
     .btn-location { padding: 11px 13px; }
+}
+
+/* ===== BOTÓN COMPARAR (TOGGLE) ===== */
+.btn-comparar-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 18px;
+    border-radius: 50px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.12s,
+                border-color 0.2s, color 0.2s;
+    box-shadow: 0 2px 6px var(--shadow-b);
+}
+.btn-comparar-toggle svg { width: 16px; height: 16px; flex-shrink: 0; }
+.btn-comparar-toggle:hover {
+    box-shadow: 0 4px 12px var(--shadow-a);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+.btn-comparar-toggle:active { transform: scale(0.97); }
+.btn-comparar-toggle.activo {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px var(--shadow-a);
+}
+
+/* ===== PANEL DE COMPARACIÓN ===== */
+.comparar-panel {
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 20px;
+    margin-bottom: 24px;
+    animation: fadeDown 0.18s ease;
+    transition: background 0.3s, border-color 0.3s;
+}
+.comparar-barra {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.comparar-input-wrapper {
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    min-width: 200px;
+}
+.comparar-input {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 50px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.3s, color 0.3s;
+}
+.comparar-input::placeholder { color: var(--text-muted); }
+.comparar-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.12);
+}
+.btn-agregar {
+    padding: 10px 18px;
+    border-radius: 50px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.2s, transform 0.12s;
+}
+.btn-agregar:hover  { opacity: 0.88; }
+.btn-agregar:active { transform: scale(0.96); }
+.btn-ejecutar-comparar {
+    padding: 10px 22px;
+    border-radius: 50px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.2s, transform 0.12s;
+}
+.btn-ejecutar-comparar:disabled            { opacity: 0.38; cursor: not-allowed; }
+.btn-ejecutar-comparar:not(:disabled):hover  { opacity: 0.88; }
+.btn-ejecutar-comparar:not(:disabled):active { transform: scale(0.96); }
+
+/* Chips de ciudades añadidas */
+.comparar-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+.comparar-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px 5px 14px;
+    border-radius: 50px;
+    background: var(--bg-card);
+    border: 1.5px solid var(--accent);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
+}
+.comparar-chip-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 2px 4px;
+    border-radius: 50%;
+    line-height: 1;
+    transition: color 0.15s, background 0.15s;
+}
+.comparar-chip-close:hover {
+    color: var(--error-color);
+    background: rgba(217, 74, 74, 0.1);
+}
+
+/* ===== RESULTADOS COMPARATIVOS ===== */
+#comparar-resultado { margin-top: 20px; }
+
+.comp-grid {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x mandatory;
+}
+.comp-grid::-webkit-scrollbar          { height: 5px; }
+.comp-grid::-webkit-scrollbar-track    { background: transparent; }
+.comp-grid::-webkit-scrollbar-thumb    { background: var(--border); border-radius: 3px; }
+
+.comp-card {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 22px 16px;
+    min-width: 170px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    scroll-snap-align: start;
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.15) inset,
+        0 4px 14px var(--shadow-b);
+    transition: transform 0.2s, box-shadow 0.2s, background 0.3s;
+}
+.comp-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px var(--shadow-a);
+}
+.comp-card-error { border-color: var(--error-color); opacity: 0.75; }
+
+.comp-ciudad {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+    line-height: 1.3;
+}
+.comp-emoji    { font-size: 42px; margin: 4px 0; line-height: 1; }
+.comp-temp     {
+    font-size: 38px;
+    font-weight: 800;
+    color: var(--temp-color);
+    letter-spacing: -1.5px;
+    line-height: 1;
+}
+.comp-condicion {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.3;
+}
+.comp-detalles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 10px;
+    width: 100%;
+}
+.comp-detalle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: var(--bg-surface);
+    border-radius: 10px;
+    padding: 8px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.comp-detalle-icon  { font-size: 15px; }
+.comp-detalle-label { font-size: 10px; color: var(--text-muted); font-weight: 400; }
+.comp-error-msg     { font-size: 13px; color: var(--error-color); text-align: center; margin-top: 8px; }
+
+/* ===== RESPONSIVE — COMPARACIÓN ===== */
+@media (max-width: 620px) {
+    .comparar-barra { flex-direction: column; align-items: stretch; }
+    .btn-ejecutar-comparar { width: 100%; text-align: center; }
+    .btn-comparar-toggle span { display: none; }
+    .btn-comparar-toggle { padding: 11px 13px; }
+}
+
+/* ===== BOTÓN AÑADIR AL COMPARADOR ===== */
+.btn-agregar-comparar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 11px 16px;
+    border-radius: 50px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.12s;
+    box-shadow: 0 2px 6px var(--shadow-b);
+}
+.btn-agregar-comparar svg { width: 16px; height: 16px; flex-shrink: 0; }
+.btn-agregar-comparar:disabled { opacity: 0.42; cursor: not-allowed; }
+.btn-agregar-comparar:not(:disabled):hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px var(--shadow-a);
+}
+.btn-agregar-comparar:not(:disabled):active { transform: scale(0.96); }
+.btn-agregar-comparar.agregado {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* ===== BARRA DE CAPTION — imagen de fondo ===== */
+.fondo-caption {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+    color: #fff;
+    padding: 60px 24px 18px;
+    pointer-events: none;
+}
+.fondo-caption-inner {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+}
+.fondo-caption-texto { flex: 1; min-width: 0; }
+.caption-titulo {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 2px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.caption-ubicacion {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.1px;
+    opacity: 0.78;
+    margin-bottom: 5px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.caption-descripcion {
+    font-size: 12px;
+    line-height: 1.55;
+    opacity: 0.82;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* Controles de navegación del carrusel */
+.fondo-caption-controles {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: all;
+    flex-shrink: 0;
+}
+.btn-fondo-nav {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.45);
+    background: rgba(0, 0, 0, 0.42);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.12s;
+    line-height: 1;
+    padding: 0;
+}
+.btn-fondo-nav:hover  { background: rgba(0, 0, 0, 0.68); transform: scale(1.1); }
+.btn-fondo-nav:active { transform: scale(0.94); }
+.caption-contador {
+    font-size: 12px;
+    opacity: 0.72;
+    min-width: 38px;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ===== RESPONSIVE — FONDO CAPTION ===== */
+@media (max-width: 620px) {
+    body { padding-bottom: 120px; }
+    .fondo-caption { padding: 50px 16px 14px; }
+    .caption-descripcion { display: none; }
+    .btn-agregar-comparar span { display: none; }
+    .btn-agregar-comparar { padding: 11px 13px; }
 }

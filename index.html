@@ -8,6 +8,9 @@
 </head>
 <body>
 
+    <!-- Capa de fondo: imagen de ciudad o gradiente meteorológico -->
+    <div id="fondo-ciudad"></div>
+
     <div class="dashboard">
 
         <!-- Fila superior: búsqueda + botón GPS -->
@@ -39,9 +42,51 @@
                 </svg>
                 <span>Usar ubicación actual</span>
             </button>
+            <button id="btn-agregar-comparar" class="btn-agregar-comparar"
+                    title="Busca una ciudad primero" disabled aria-label="Añadir ciudad actual al comparador">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"/>
+                    <line x1="12" y1="8" x2="12" y2="16"/>
+                    <line x1="8"  y1="12" x2="16" y2="12"/>
+                </svg>
+                <span>+ Comparar</span>
+            </button>
             <button id="btn-tema" class="btn-tema" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema claro/oscuro">
                 <span id="tema-icon">🌙</span>
             </button>
+            <button id="btn-comparar" class="btn-comparar-toggle" title="Comparar varias ciudades" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="7" rx="1"/>
+                    <rect x="14" y="3" width="7" height="7" rx="1"/>
+                    <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                <span>Comparar</span>
+            </button>
+        </div>
+
+        <!-- Panel de comparación multi-ciudad (oculto por defecto) -->
+        <div id="comparar-panel" class="comparar-panel" hidden>
+            <div class="comparar-barra">
+                <div class="comparar-input-wrapper">
+                    <input
+                        type="text"
+                        id="comparar-input"
+                        class="comparar-input"
+                        placeholder="Ciudad (ej: París, Francia)…"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                    <button id="btn-agregar-ciudad" class="btn-agregar">Añadir</button>
+                </div>
+                <button id="btn-ejecutar-comparar" class="btn-ejecutar-comparar" disabled>
+                    Ver comparativa
+                </button>
+            </div>
+            <div id="comparar-chips" class="comparar-chips"></div>
+            <div id="comparar-resultado"></div>
         </div>
 
         <!-- Cuerpo del dashboard (se inyecta dinámicamente) -->
@@ -49,6 +94,22 @@
             <div class="loading-overlay">Detectando tu ubicación…</div>
         </div>
 
+    </div>
+
+    <!-- Barra inferior: caption de la imagen + controles del carrusel -->
+    <div id="fondo-caption" class="fondo-caption" hidden>
+        <div class="fondo-caption-inner">
+            <div class="fondo-caption-texto">
+                <span id="caption-titulo"      class="caption-titulo"></span>
+                <span id="caption-ubicacion"   class="caption-ubicacion"></span>
+                <p    id="caption-descripcion" class="caption-descripcion"></p>
+            </div>
+            <div class="fondo-caption-controles">
+                <button id="btn-fondo-prev" class="btn-fondo-nav" aria-label="Imagen anterior">&#8249;</button>
+                <span   id="caption-contador"  class="caption-contador"></span>
+                <button id="btn-fondo-next" class="btn-fondo-nav" aria-label="Siguiente imagen">&#8250;</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -156,6 +217,88 @@
         let ultimaConsulta = null;
 
         // ============================================================
+        //  CACHÉ DE CLIMA — TTL de 1 hora en localStorage
+        //  Compatible con cualquier navegador moderno (multiplataforma):
+        //  usa localStorage estándar con serialización JSON.
+        // ============================================================
+
+        /** Tiempo de vida de cada entrada de caché: 1 hora en milisegundos. */
+        const CACHE_TTL_MS  = 3_600_000;
+        /** Prefijo de namespace para las claves de caché en localStorage. */
+        const CACHE_PREFIJO = 'wc-';
+
+        /**
+         * Genera la clave de localStorage para un par de coordenadas.
+         * Redondea a 2 decimales (~1.1 km de precisión) para agrupar consultas
+         * de puntos prácticamente idénticos dentro de la misma ciudad.
+         *
+         * @param {number} latitud
+         * @param {number} longitud
+         * @returns {string}
+         */
+        function claveCache(latitud, longitud) {
+            return `${CACHE_PREFIJO}${latitud.toFixed(2)}_${longitud.toFixed(2)}`;
+        }
+
+        /**
+         * Intenta leer una entrada de caché válida para las coordenadas dadas.
+         * Devuelve los datos del clima si existen y no han expirado (< 1 hora).
+         * Elimina automáticamente las entradas vencidas para no acumular datos
+         * obsoletos en el almacenamiento.
+         *
+         * @param {number} latitud
+         * @param {number} longitud
+         * @returns {object|null} Respuesta JSON de la API, o null si no hay caché válida.
+         */
+        function leerCache(latitud, longitud) {
+            try {
+                const clave = claveCache(latitud, longitud);
+                const raw   = localStorage.getItem(clave);
+                if (!raw) return null;
+                const { timestamp, datos } = JSON.parse(raw);
+                if (Date.now() - timestamp > CACHE_TTL_MS) {
+                    localStorage.removeItem(clave);
+                    return null;
+                }
+                return datos;
+            } catch {
+                return null;
+            }
+        }
+
+        /**
+         * Persiste los datos del clima en localStorage junto con la marca de tiempo
+         * de escritura. Falla de forma silenciosa si el almacenamiento está lleno
+         * o deshabilitado (ej. modo privado con cuota reducida) para no interrumpir
+         * el flujo principal de la aplicación.
+         *
+         * @param {number} latitud
+         * @param {number} longitud
+         * @param {object} datos - Respuesta JSON completa de Open-Meteo.
+         */
+        function escribirCache(latitud, longitud, datos) {
+            try {
+                localStorage.setItem(
+                    claveCache(latitud, longitud),
+                    JSON.stringify({ timestamp: Date.now(), datos })
+                );
+            } catch {
+                // localStorage puede estar lleno o deshabilitado; se ignora sin romper la app.
+            }
+        }
+
+        /**
+         * Elimina la entrada de caché de unas coordenadas específicas,
+         * forzando que la próxima consulta haga un fetch fresco a la API.
+         *
+         * @param {number} latitud
+         * @param {number} longitud
+         */
+        function invalidarCache(latitud, longitud) {
+            localStorage.removeItem(claveCache(latitud, longitud));
+        }
+
+        // ============================================================
         //  HELPERS DE VIENTO, FONDO DINÁMICO, TEMA E HISTORIAL
         // ============================================================
 
@@ -192,8 +335,12 @@
          * aplicarFondoDinamico(95); // body.wx-stormy → gradiente violeta
          */
         function aplicarFondoDinamico(weatherCode) {
+            // Las clases wx-* se aplican a #fondo-ciudad (no al body)
+            // para que coexistan con el sistema de imagen de ciudad.
+            const fondoEl = document.getElementById('fondo-ciudad');
+            if (!fondoEl) return;
             const clases = ['wx-sunny', 'wx-cloudy', 'wx-rainy', 'wx-snowy', 'wx-stormy', 'wx-foggy'];
-            document.body.classList.remove(...clases);
+            fondoEl.classList.remove(...clases);
 
             let clase;
             if (weatherCode <= 1)                                               clase = 'wx-sunny';
@@ -204,7 +351,7 @@
                      weatherCode === 85 || weatherCode === 86)                  clase = 'wx-snowy';
             else                                                                clase = 'wx-stormy';
 
-            document.body.classList.add(clase);
+            fondoEl.classList.add(clase);
         }
 
         /**
@@ -322,6 +469,8 @@
             if (!ultimaConsulta) return;
             const btnRefresh = document.querySelector('.btn-refresh');
             if (btnRefresh) btnRefresh.classList.add('spin');
+            // El botón ↻ siempre debe mostrar datos frescos: invalida la caché antes del fetch.
+            invalidarCache(ultimaConsulta.latitud, ultimaConsulta.longitud);
             try {
                 const datos = await obtenerClimaPorCoordenadas(ultimaConsulta.latitud, ultimaConsulta.longitud);
                 renderizarDashboard(ultimaConsulta.ciudad, ultimaConsulta.pais, datos);
@@ -515,6 +664,9 @@
          * //   daily:   { time: ['2026-05-22', ...], precipitation_probability_max: [30, ...], ... } }
          */
         async function obtenerClimaPorCoordenadas(latitud, longitud) {
+            const cached = leerCache(latitud, longitud);
+            if (cached) return cached;
+
             const params = new URLSearchParams({
                 latitude:      latitud,
                 longitude:     longitud,
@@ -525,7 +677,9 @@
             });
             const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
             if (!res.ok) throw new Error(`Error al obtener el clima: ${res.status}`);
-            return res.json();
+            const datos = await res.json();
+            escribirCache(latitud, longitud, datos);
+            return datos;
         }
 
         /**
@@ -741,6 +895,7 @@
          */
         async function buscarCiudad(nombreCiudad) {
             cerrarSugerencias();
+            limpiarFondoCiudad();
             mostrarCargando(`Buscando "${nombreCiudad}"…`);
             try {
                 const { ubicacion, datos } = await obtenerClima(nombreCiudad);
@@ -751,6 +906,8 @@
                 searchInput.value = etiqueta;
                 guardarEnHistorial(ubicacion.ciudad, ubicacion.pais);
                 ultimaConsulta = { latitud: ubicacion.latitud, longitud: ubicacion.longitud, ciudad: ubicacion.ciudad, pais: ubicacion.pais };
+                actualizarBtnAgregarComparar();
+                cargarImagenesCiudad(ubicacion.ciudad); // asíncrono, no bloquea
             } catch (err) {
                 console.error('[buscarCiudad]', err);
                 mostrarError(err.message);
@@ -777,6 +934,7 @@
          */
         async function buscarCandidatoDirecto(candidato) {
             cerrarSugerencias();
+            limpiarFondoCiudad();
             const etiqueta = candidato.country
                 ? `${candidato.name}, ${candidato.country}`
                 : candidato.name;
@@ -787,6 +945,8 @@
                 renderizarDashboard(candidato.name, candidato.country ?? '', datos);
                 guardarEnHistorial(candidato.name, candidato.country ?? '');
                 ultimaConsulta = { latitud: candidato.latitude, longitud: candidato.longitude, ciudad: candidato.name, pais: candidato.country ?? '' };
+                actualizarBtnAgregarComparar();
+                cargarImagenesCiudad(candidato.name); // asíncrono, no bloquea
             } catch (err) {
                 console.error('[buscarCandidatoDirecto]', err);
                 mostrarError(err.message);
@@ -809,6 +969,7 @@
          * );
          */
         async function buscarPorCoordenadas(lat, lon) {
+            limpiarFondoCiudad();
             mostrarCargando('Obteniendo clima por GPS…');
             try {
                 const nombreCiudad = await ciudadDesdeCoordenadas(lat, lon);
@@ -816,6 +977,8 @@
                 renderizarDashboard(nombreCiudad, '', datos);
                 searchInput.value = nombreCiudad;
                 ultimaConsulta = { latitud: lat, longitud: lon, ciudad: nombreCiudad, pais: '' };
+                actualizarBtnAgregarComparar();
+                cargarImagenesCiudad(nombreCiudad); // asíncrono, no bloquea
             } catch (err) {
                 console.error('[buscarPorCoordenadas]', err);
                 mostrarError('No se pudo obtener el clima por GPS: ' + err.message);
@@ -1008,6 +1171,497 @@
         });
 
         // ============================================================
+        //  CARRUSEL DE IMÁGENES DE FONDO — Wikipedia REST API
+        //  Sin API key. CORS abierto. Imágenes curadas editorialmente.
+        //  Endpoints usados:
+        //    · page/summary/{ciudad}    → imagen principal + descripción + extracto
+        //    · page/media-list/{ciudad} → galería de imágenes del artículo
+        // ============================================================
+
+        /** Imágenes cargadas para la ciudad actual. */
+        let imagenesFondo = [];
+        /** Índice de la imagen actualmente visible. */
+        let indiceImagenFondo = 0;
+        /** Referencia al setInterval activo; null cuando el carrusel está detenido. */
+        let temporizadorFondo = null;
+        /** Intervalo de rotación automática: 60 segundos. */
+        const INTERVALO_CARRUSEL_MS = 60_000;
+
+        /**
+         * Consulta la Wikipedia REST API para obtener imágenes representativas de una ciudad.
+         * Usa dos endpoints en secuencia:
+         *   1. `page/summary/{ciudad}` — imagen principal, descripción y extracto del artículo.
+         *   2. `page/media-list/{titulo_canonico}` — galería del artículo filtrada por fotografías reales.
+         *
+         * Filtra el resultado para retener solo imágenes marcadas como `showInGallery`,
+         * descarta archivos SVG y elimina duplicados respecto a la imagen principal.
+         *
+         * @async
+         * @param {string} ciudad - Nombre de la ciudad a buscar en Wikipedia (en cualquier idioma).
+         * @returns {Promise<Array<{url: string, titulo: string, ubicacion: string, extracto: string}>>}
+         *   Arreglo de objetos de imagen listos para el carrusel. Puede estar vacío si Wikipedia
+         *   no dispone de imágenes para la ciudad solicitada.
+         */
+        async function obtenerImagenesWikipedia(ciudad) {
+            const base = 'https://en.wikipedia.org/api/rest_v1/page';
+
+            // Paso 1: summary para obtener título canónico + descripción + imagen principal
+            let summary = null;
+            try {
+                const res = await fetch(`${base}/summary/${encodeURIComponent(ciudad)}`);
+                if (res.ok) summary = await res.json();
+            } catch { /* ignore: se usará fallback vacío */ }
+
+            const canonicalTitle = summary?.title ?? ciudad;
+            const ubicacion      = summary?.description ?? ciudad;
+            // Dos primeras frases del extracto como descripción editorial
+            const extracto = summary?.extract
+                ? summary.extract.split('. ').slice(0, 2).join('. ').trim() + '.'
+                : '';
+
+            const imagenes = [];
+
+            // Imagen principal del artículo (originalimage tiene mayor resolución)
+            const urlPrincipal = summary?.originalimage?.source ?? summary?.thumbnail?.source;
+            if (urlPrincipal) {
+                imagenes.push({ url: urlPrincipal, titulo: canonicalTitle, ubicacion, extracto });
+            }
+
+            // Paso 2: galería del artículo usando el título canónico
+            try {
+                const res = await fetch(`${base}/media-list/${encodeURIComponent(canonicalTitle)}`);
+                if (res.ok) {
+                    const media = await res.json();
+                    (media.items ?? [])
+                        .filter(item =>
+                            item.type === 'image' &&
+                            item.showInGallery === true &&
+                            !item.title?.toLowerCase().endsWith('.svg')
+                        )
+                        .forEach(item => {
+                            // Elegir la URL de mayor resolución del srcset
+                            const srcs  = item.srcset ?? [];
+                            const mejor = srcs[srcs.length - 1]?.src ?? srcs[0]?.src;
+                            if (!mejor) return;
+
+                            const url = mejor.startsWith('//') ? `https:${mejor}` : mejor;
+                            if (imagenes.some(img => img.url === url)) return; // evitar duplicado
+
+                            const titulo = item.caption?.text
+                                ?? item.title?.replace(/^File:/, '').replace(/\.\w+$/, '').replace(/_/g, ' ')
+                                ?? ciudad;
+
+                            imagenes.push({ url, titulo, ubicacion, extracto });
+                        });
+                }
+            } catch { /* ignore */ }
+
+            return imagenes;
+        }
+
+        /**
+         * Aplica la imagen del índice dado como fondo de `#fondo-ciudad` con un efecto
+         * de fundido (fade-out → swap → fade-in). Actualiza el caption con los metadatos
+         * de la imagen y el contador de posición del carrusel.
+         * No hace nada si `imagenesFondo` está vacío.
+         *
+         * @param {number} indice - Índice dentro de `imagenesFondo` a mostrar.
+         */
+        function mostrarImagenFondo(indice) {
+            if (!imagenesFondo.length) return;
+            const fondoEl    = document.getElementById('fondo-ciudad');
+            const captionEl  = document.getElementById('fondo-caption');
+            const tituloEl   = document.getElementById('caption-titulo');
+            const ubicEl     = document.getElementById('caption-ubicacion');
+            const descEl     = document.getElementById('caption-descripcion');
+            const contadorEl = document.getElementById('caption-contador');
+            const prevBtn    = document.getElementById('btn-fondo-prev');
+            const nextBtn    = document.getElementById('btn-fondo-next');
+            if (!fondoEl) return;
+
+            const img = imagenesFondo[indice];
+
+            // Fundido: ocultar → cambiar imagen → mostrar
+            fondoEl.style.opacity = '0';
+            setTimeout(() => {
+                fondoEl.style.backgroundImage = `url("${img.url}")`;
+                fondoEl.style.opacity = '1';
+            }, 400);
+
+            // Mostrar caption
+            if (captionEl)  captionEl.hidden = false;
+            if (tituloEl)   tituloEl.textContent   = img.titulo;
+            if (ubicEl)     ubicEl.textContent      = img.ubicacion;
+            if (descEl)     descEl.textContent      = img.extracto;
+            if (contadorEl) contadorEl.textContent  = `${indice + 1} / ${imagenesFondo.length}`;
+
+            // Ocultar controles de navegación si solo hay 1 imagen
+            const mostrarNav = imagenesFondo.length > 1;
+            if (prevBtn) prevBtn.style.display = mostrarNav ? '' : 'none';
+            if (nextBtn) nextBtn.style.display = mostrarNav ? '' : 'none';
+            if (contadorEl) contadorEl.style.display = mostrarNav ? '' : 'none';
+        }
+
+        /**
+         * Avanza el carrusel al siguiente índice de forma circular y muestra la imagen.
+         */
+        function avanzarImagenFondo() {
+            indiceImagenFondo = (indiceImagenFondo + 1) % imagenesFondo.length;
+            mostrarImagenFondo(indiceImagenFondo);
+        }
+
+        /**
+         * Retrocede el carrusel al índice anterior de forma circular y muestra la imagen.
+         */
+        function retrocederImagenFondo() {
+            indiceImagenFondo = (indiceImagenFondo - 1 + imagenesFondo.length) % imagenesFondo.length;
+            mostrarImagenFondo(indiceImagenFondo);
+        }
+
+        /**
+         * Inicia la rotación automática del carrusel con el intervalo `INTERVALO_CARRUSEL_MS`.
+         * Detiene cualquier temporizador previo antes de crear uno nuevo para garantizar
+         * que nunca coexistan múltiples intervalos concurrentes.
+         */
+        function iniciarCarrusel() {
+            detenerCarrusel();
+            if (imagenesFondo.length > 1) {
+                temporizadorFondo = setInterval(avanzarImagenFondo, INTERVALO_CARRUSEL_MS);
+            }
+        }
+
+        /**
+         * Detiene la rotación automática limpiando el `setInterval` activo.
+         * Seguro de llamar aunque el carrusel no esté activo (`temporizadorFondo` null).
+         */
+        function detenerCarrusel() {
+            if (temporizadorFondo !== null) {
+                clearInterval(temporizadorFondo);
+                temporizadorFondo = null;
+            }
+        }
+
+        /**
+         * Limpia por completo el estado del carrusel: detiene el temporizador,
+         * vacía el arreglo de imágenes, quita el `background-image` del elemento
+         * de fondo y oculta la barra de caption.
+         * Debe llamarse al inicio de cada nueva búsqueda de ciudad para evitar
+         * que las imágenes de la ciudad anterior persistan.
+         */
+        function limpiarFondoCiudad() {
+            detenerCarrusel();
+            imagenesFondo     = [];
+            indiceImagenFondo = 0;
+            const fondoEl   = document.getElementById('fondo-ciudad');
+            const captionEl = document.getElementById('fondo-caption');
+            if (fondoEl) {
+                fondoEl.style.backgroundImage = '';
+                fondoEl.classList.remove('con-imagen');
+                fondoEl.style.opacity = '1';
+            }
+            if (captionEl) captionEl.hidden = true;
+        }
+
+        /**
+         * Orquesta la carga de imágenes desde Wikipedia para la ciudad dada,
+         * activa el modo `con-imagen` en el elemento de fondo y arranca el carrusel.
+         * Se llama de forma asíncrona tras renderizar el dashboard: no bloquea la UI.
+         * En caso de fallo o ausencia de imágenes, el fondo meteorológico wx-* sigue activo
+         * como fallback visual transparente para el usuario.
+         *
+         * @async
+         * @param {string} ciudad - Nombre de la ciudad cuyas imágenes se cargarán.
+         */
+        async function cargarImagenesCiudad(ciudad) {
+            try {
+                const imgs = await obtenerImagenesWikipedia(ciudad);
+                if (!imgs.length) return; // sin imágenes: el gradiente wx-* es el fondo
+
+                imagenesFondo     = imgs;
+                indiceImagenFondo = 0;
+
+                const fondoEl = document.getElementById('fondo-ciudad');
+                if (fondoEl) fondoEl.classList.add('con-imagen');
+
+                mostrarImagenFondo(0);
+                iniciarCarrusel();
+            } catch {
+                // Fallo silencioso: el fondo meteorológico wx-* continúa como fallback.
+            }
+        }
+
+        /**
+         * Registra los listeners de los botones de navegación del carrusel (anterior/siguiente).
+         * Al navegar manualmente se reinicia el temporizador para evitar un salto automático
+         * inmediato después de una acción del usuario.
+         * Debe llamarse una sola vez desde `inicializar()`.
+         */
+        function inicializarCarrusel() {
+            document.getElementById('btn-fondo-prev')?.addEventListener('click', () => {
+                detenerCarrusel();
+                retrocederImagenFondo();
+                iniciarCarrusel();
+            });
+            document.getElementById('btn-fondo-next')?.addEventListener('click', () => {
+                detenerCarrusel();
+                avanzarImagenFondo();
+                iniciarCarrusel();
+            });
+        }
+
+        // ============================================================
+        //  BOTÓN AÑADIR CIUDAD AL COMPARADOR
+        // ============================================================
+
+        /**
+         * Actualiza el estado `disabled` y el atributo `title` del botón "Añadir al comparador"
+         * según si existe una consulta exitosa activa en `ultimaConsulta`.
+         */
+        function actualizarBtnAgregarComparar() {
+            const btn = document.getElementById('btn-agregar-comparar');
+            if (!btn) return;
+            btn.disabled = !ultimaConsulta;
+            btn.title = ultimaConsulta
+                ? `Añadir "${ultimaConsulta.ciudad}" al comparador`
+                : 'Busca una ciudad primero';
+        }
+
+        /**
+         * Registra el listener del botón "Añadir al comparador" en la barra de búsqueda.
+         * Al hacer clic agrega la ciudad actualmente cargada en el dashboard a la lista
+         * de comparación y muestra un feedback visual de confirmación (clase `agregado`
+         * durante 1,3 segundos). Si el panel de comparación está oculto y hay al menos
+         * 2 ciudades en lista, lo abre automáticamente para que el usuario lo vea.
+         * Debe llamarse una sola vez desde `inicializar()`.
+         */
+        function inicializarBtnAgregarComparar() {
+            const btn = document.getElementById('btn-agregar-comparar');
+            if (!btn) return;
+
+            btn.addEventListener('click', () => {
+                if (!ultimaConsulta) return;
+                const etiqueta = ultimaConsulta.pais
+                    ? `${ultimaConsulta.ciudad}, ${ultimaConsulta.pais}`
+                    : ultimaConsulta.ciudad;
+
+                agregarCiudadAComparacion(etiqueta);
+                renderizarChips();
+
+                // Feedback visual en el botón
+                btn.classList.add('agregado');
+                setTimeout(() => btn.classList.remove('agregado'), 1300);
+
+                // Abrir el panel automáticamente cuando ya hay ≥2 ciudades
+                const panel      = document.getElementById('comparar-panel');
+                const btnToggle  = document.getElementById('btn-comparar');
+                if (panel && panel.hidden && ciudadesComparacion.length >= 2) {
+                    panel.hidden = false;
+                    btnToggle?.classList.add('activo');
+                    btnToggle?.setAttribute('aria-pressed', 'true');
+                }
+            });
+        }
+
+        // ============================================================
+        //  COMPARACIÓN DE MÚLTIPLES CIUDADES
+        // ============================================================
+
+        /** Máximo de ciudades permitidas en una comparativa simultánea. */
+        const MAX_CIUDADES_COMPARAR = 6;
+
+        /** Etiquetas de las ciudades añadidas al modo comparativo. */
+        let ciudadesComparacion = [];
+
+        /**
+         * Intenta añadir una ciudad a la lista de comparación.
+         * Rechaza duplicados (comparación normalizada) y entradas que superan el límite.
+         *
+         * @param {string} etiqueta - Nombre de ciudad con o sin país, ej. `'Lima, Perú'`.
+         * @returns {boolean} true si se añadió; false si era duplicada o la lista estaba llena.
+         */
+        function agregarCiudadAComparacion(etiqueta) {
+            const norm = normalizar(etiqueta);
+            if (ciudadesComparacion.some(c => normalizar(c) === norm)) return false;
+            if (ciudadesComparacion.length >= MAX_CIUDADES_COMPARAR) return false;
+            ciudadesComparacion.push(etiqueta);
+            return true;
+        }
+
+        /**
+         * Elimina la ciudad en la posición `idx` y actualiza los chips del panel.
+         *
+         * @param {number} idx - Índice de la ciudad en `ciudadesComparacion`.
+         */
+        function quitarCiudadDeComparacion(idx) {
+            ciudadesComparacion.splice(idx, 1);
+            renderizarChips();
+        }
+
+        /**
+         * Redibuja los chips (etiquetas con botón de cierre) de las ciudades añadidas
+         * y actualiza el estado disabled del botón de ejecutar (requiere mínimo 2 ciudades).
+         */
+        function renderizarChips() {
+            const chips       = document.getElementById('comparar-chips');
+            const btnEjecutar = document.getElementById('btn-ejecutar-comparar');
+            if (!chips || !btnEjecutar) return;
+
+            chips.innerHTML = ciudadesComparacion.map((etiqueta, i) => `
+                <span class="comparar-chip">
+                    ${etiqueta}
+                    <button class="comparar-chip-close" data-idx="${i}" aria-label="Quitar ${etiqueta}">✕</button>
+                </span>`).join('');
+
+            chips.querySelectorAll('.comparar-chip-close').forEach(btn => {
+                btn.addEventListener('click', () => quitarCiudadDeComparacion(+btn.dataset.idx));
+            });
+
+            btnEjecutar.disabled = ciudadesComparacion.length < 2;
+        }
+
+        /**
+         * Genera e inyecta en `#comparar-resultado` las tarjetas comparativas
+         * de todas las ciudades. Usa `Promise.allSettled`, por lo que las ciudades
+         * con error se muestran como tarjeta de fallo sin bloquear las exitosas.
+         *
+         * @param {Array<{status: 'fulfilled'|'rejected', value?, reason?, etiqueta: string}>} resultados
+         *   Arreglo enriquecido de Promise.allSettled con la etiqueta original de cada ciudad.
+         */
+        function renderizarComparacion(resultados) {
+            const contenedor = document.getElementById('comparar-resultado');
+            if (!contenedor) return;
+
+            const cardsHTML = resultados.map(r => {
+                if (r.status === 'rejected') {
+                    return `
+                        <div class="comp-card comp-card-error">
+                            <div class="comp-ciudad">${r.etiqueta}</div>
+                            <div class="comp-error-msg">⚠️ ${r.reason?.message ?? 'Error desconocido'}</div>
+                        </div>`;
+                }
+
+                const { ubicacion, datos } = r.value;
+                const c        = datos.current;
+                const condicion = resolverCodigo(c.weather_code);
+                const uv       = c.uv_index ?? 0;
+
+                return `
+                    <div class="comp-card">
+                        <div class="comp-ciudad">${ubicacion.ciudad}${ubicacion.pais ? ', ' + ubicacion.pais : ''}</div>
+                        <div class="comp-emoji">${condicion.emoji}</div>
+                        <div class="comp-temp">${Math.round(c.temperature_2m)}°C</div>
+                        <div class="comp-condicion">${condicion.texto}</div>
+                        <div class="comp-detalles">
+                            <div class="comp-detalle">
+                                <span class="comp-detalle-icon">💧</span>
+                                <span>${c.relative_humidity_2m}%</span>
+                                <span class="comp-detalle-label">Humedad</span>
+                            </div>
+                            <div class="comp-detalle">
+                                <span class="comp-detalle-icon">🌡️</span>
+                                <span>${Math.round(c.apparent_temperature)}°C</span>
+                                <span class="comp-detalle-label">Sensación</span>
+                            </div>
+                            <div class="comp-detalle">
+                                <span class="comp-detalle-icon">💨</span>
+                                <span>${Math.round(c.wind_speed_10m)} km/h</span>
+                                <span class="comp-detalle-label">Viento</span>
+                            </div>
+                            <div class="comp-detalle">
+                                <span class="comp-detalle-icon">🔆</span>
+                                <span>${uv.toFixed(1)}</span>
+                                <span class="comp-detalle-label">Índice UV</span>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+
+            contenedor.innerHTML = `<div class="comp-grid">${cardsHTML}</div>`;
+        }
+
+        /**
+         * Lanza en paralelo la obtención del clima de todas las ciudades de la lista
+         * usando `Promise.allSettled` para tolerar fallos individuales. Muestra un
+         * estado de carga mientras procesa y vuelve a habilitar el botón al terminar.
+         *
+         * @async
+         * @returns {Promise<void>}
+         */
+        async function ejecutarComparacion() {
+            const contenedor  = document.getElementById('comparar-resultado');
+            const btnEjecutar = document.getElementById('btn-ejecutar-comparar');
+            if (!contenedor || !btnEjecutar) return;
+
+            contenedor.innerHTML = '<div class="loading-overlay">Obteniendo datos de todas las ciudades…</div>';
+            btnEjecutar.disabled = true;
+
+            const promesas = ciudadesComparacion.map(etiqueta =>
+                obtenerClima(etiqueta).then(result => ({ ...result, etiqueta }))
+            );
+            const resultados = await Promise.allSettled(promesas);
+            // Enriquecer con la etiqueta original para poder mostrarla en tarjetas de error.
+            const anotados = resultados.map((r, i) => ({ ...r, etiqueta: ciudadesComparacion[i] }));
+
+            renderizarComparacion(anotados);
+            btnEjecutar.disabled = ciudadesComparacion.length < 2;
+        }
+
+        /**
+         * Registra todos los listeners del panel de comparación y el botón toggle.
+         * Debe llamarse una sola vez desde `inicializar()`.
+         */
+        function inicializarComparacion() {
+            const btnComparar  = document.getElementById('btn-comparar');
+            const panel        = document.getElementById('comparar-panel');
+            const inputComp    = document.getElementById('comparar-input');
+            const btnAgregar   = document.getElementById('btn-agregar-ciudad');
+            const btnEjecutar  = document.getElementById('btn-ejecutar-comparar');
+            if (!btnComparar || !panel || !inputComp || !btnAgregar || !btnEjecutar) return;
+
+            // Toggle visibilidad del panel
+            btnComparar.addEventListener('click', () => {
+                const estabVisible = !panel.hidden;
+                panel.hidden = estabVisible;
+                btnComparar.classList.toggle('activo', !estabVisible);
+                btnComparar.setAttribute('aria-pressed', String(!estabVisible));
+
+                if (estabVisible) {
+                    // Al cerrar: limpiar todo el estado de comparación
+                    ciudadesComparacion = [];
+                    renderizarChips();
+                    document.getElementById('comparar-resultado').innerHTML = '';
+                    inputComp.value = '';
+                } else {
+                    inputComp.focus();
+                }
+            });
+
+            // Añadir ciudad al presionar el botón o pulsar Enter en el input
+            const intentarAgregar = () => {
+                const etiqueta = inputComp.value.trim();
+                if (!etiqueta) return;
+
+                const agregada = agregarCiudadAComparacion(etiqueta);
+                if (agregada) {
+                    renderizarChips();
+                    inputComp.value = '';
+                    inputComp.focus();
+                } else if (ciudadesComparacion.length >= MAX_CIUDADES_COMPARAR) {
+                    inputComp.setCustomValidity(`Máximo ${MAX_CIUDADES_COMPARAR} ciudades.`);
+                    inputComp.reportValidity();
+                    setTimeout(() => inputComp.setCustomValidity(''), 2500);
+                }
+            };
+
+            btnAgregar.addEventListener('click', intentarAgregar);
+            inputComp.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); intentarAgregar(); }
+            });
+
+            btnEjecutar.addEventListener('click', ejecutarComparacion);
+        }
+
+        // ============================================================
         //  CARGA INICIAL — Detección por IP con fallback
         // ============================================================
         /**
@@ -1025,6 +1679,9 @@
          */
         async function inicializar() {
             inicializarTema();
+            inicializarCarrusel();
+            inicializarBtnAgregarComparar();
+            inicializarComparacion();
             const CIUDAD_FALLBACK = 'Santiago de Cali';
             try {
                 const ctrl  = new AbortController();
