@@ -41,6 +41,56 @@ Al cargar, la app detecta automáticamente la ciudad del usuario mediante su dir
 
 ---
 
+## Pruebas automatizadas
+
+El proyecto incluye pruebas con el runner nativo de Node.js (sin dependencias externas). Cubren utilidades puras (WMO, normalización, caché) y la capa API con `fetch` simulado.
+
+```bash
+npm test
+```
+
+Archivos relevantes:
+
+| Archivo | Qué verifica |
+|---------|----------------|
+| `tests/utils.test.mjs` | `resolverCodigo`, `parsearConsulta`, `normalizar`, `gradosACardinal`, `claveCache` |
+| `tests/api.test.mjs` | Geocodificación, errores HTTP y flujo `obtenerClima` con mocks |
+
+La lógica compartida y probada está en `lib/` (`wmo.mjs`, `utils.mjs`, `open-meteo.mjs`). La interfaz en `index.html` implementa la misma API de usuario con funciones equivalentes en el script embebido.
+
+---
+
+## Seguridad y uso ético
+
+### Codificación segura
+
+- **Parámetros de URL:** Los nombres de ciudad se envían con `encodeURIComponent()` para evitar manipulación de query strings.
+- **Inserción en DOM:** Los nombres mostrados provienen de APIs de confianza; en producción convendría escapar HTML explícitamente si se aceptara texto libre sin validar.
+- **Almacenamiento local:** Solo se guardan datos meteorológicos y preferencias de UI; no se almacenan contraseñas ni datos personales sensibles.
+- **Geolocalización:** Se solicita permiso explícito del navegador; si el usuario rechaza, se muestra un mensaje claro sin reintentos agresivos.
+- **HTTPS:** Todas las APIs externas se consultan por HTTPS.
+
+### Uso responsable de APIs de terceros
+
+- **Open-Meteo** y **Nominatim** son servicios gratuitos: evita automatizar peticiones masivas; la app usa caché de 1 hora para reducir carga.
+- **Nominatim (OSM):** En despliegues de alto tráfico se debe usar un servidor propio o respetar la [política de uso](https://operations.osmfoundation.org/policies/nominatim/).
+- **ipapi.co:** Solo se usa al inicio para sugerir una ciudad por defecto, con timeout de 4 s.
+
+### Código generado con IA
+
+Partes del proyecto pueden haberse elaborado o documentado con asistencia de IA. Buenas prácticas aplicadas:
+
+- Revisión manual del código antes de entregar o desplegar.
+- Pruebas automatizadas para validar comportamiento crítico.
+- Atribución de APIs y licencias en este README.
+- No incluir claves secretas ni credenciales en el repositorio.
+
+### Licencia
+
+Proyecto bajo **MIT** — ver [LICENSE](LICENSE). Las APIs externas mantienen sus propios términos de servicio.
+
+---
+
 ## Instrucciones de Instalación y Configuración
 
 El proyecto no requiere instalación de dependencias ni proceso de compilación. Al ser 100% frontend estático, solo necesitas un servidor local para evitar restricciones de CORS del navegador.
@@ -260,9 +310,26 @@ El botón de refresco ↻ invalida la entrada de caché antes del fetch para gar
 
 ---
 
+## Estructura del proyecto
+
+```
+OpenMeteoAPI/
+├── index.html          # Aplicación web (UI + lógica del dashboard)
+├── style.css           # Estilos y temas claro/oscuro
+├── script.js           # Ejemplo CLI: node script.js "Cali"
+├── lib/                # Módulos compartidos y probados
+│   ├── wmo.mjs
+│   ├── utils.mjs
+│   └── open-meteo.mjs
+├── tests/              # Pruebas (npm test)
+├── modeloDatos.md      # Modelo de datos y flujos
+├── package.json
+└── LICENSE
+```
+
 ## Licencia
 
-Este proyecto está bajo la licencia **MIT**. Consulta el archivo `LICENSE` para más detalles.
+Este proyecto está bajo la licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
 
 ---
 
